@@ -1,11 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 const Call = require('../models/Call');
+const TranscriptionService = require('./transcription.service');
 
 class RecordingService {
   constructor() {
     this.recordingPath = process.env.RECORDING_PATH || './recordings';
     this.ensureRecordingDirectory();
+    this.transcriptionService = new TranscriptionService();
   }
 
   ensureRecordingDirectory() {
@@ -31,6 +33,11 @@ class RecordingService {
       );
 
       console.log(`💾 Recording saved: ${filename}`);
+
+      // NEW: Trigger transcription in background
+      this.transcriptionService.triggerTranscription(callId, filePath);
+      console.log(`🎤 Transcription queued for: ${callId}`);
+
       return filePath;
     } catch (error) {
       console.error('❌ Error saving recording:', error);

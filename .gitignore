@@ -67,3 +67,6 @@ node_modules/
 .env.staging.local
 
 npm-debug.log
+__pycache__
+output/
+recordings/

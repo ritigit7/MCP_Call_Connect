@@ -1188,13 +1188,83 @@
                             ${call.recordingUrl ? '<div class="text-xs text-indigo-600 mt-1">🎙️ Recording available</div>' : ''}
                         </div>
                         <div>
-                            ${call.recordingUrl ? `<button onclick="downloadRecording('${call._id}')" class="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-semibold hover:bg-indigo-600 transition-colors">⬇ Download</button>` : ''}
+                            ${call.recordingUrl ? `
+  <button class="btn btn-primary" onclick="downloadRecording('${call._id}')">Download</button>
+  <button class="btn btn-primary" onclick="viewTranscription('${call.callId}')">View Transcript</button>
+` : ''}
                         </div>
                     </div>
                 `;
             }).join('');
         }
 
+        // Add this function after displayCalls()
+        async function viewTranscription(callId) {
+            try {
+                const response = await fetch(`${SERVER_URL}/api/transcriptions/${callId}`, {
+                    headers: { 'Authorization': `Bearer ${agentToken}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayTranscriptionModal(data.transcription);
+                } else {
+                    const error = await response.json();
+                    alert(error.error || 'Transcription not available');
+                }
+            } catch (error) {
+                alert('Error loading transcription: ' + error.message);
+            }
+        }
+
+        function displayTranscriptionModal(transcription) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.8); z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+  `;
+
+            let conversationHTML = '';
+
+            if (transcription.status === 'completed') {
+                conversationHTML = transcription.conversation.map(turn => `
+      <div style="margin: 15px 0; padding: 10px; background: #f7fafc; border-radius: 5px;">
+        <strong style="color: ${turn.speaker === 'Agent' ? '#667eea' : '#48bb78'}">
+          ${turn.speaker}
+        </strong>
+        <span style="color: #718096; font-size: 12px; margin-left: 10px;">
+          ${formatTimestamp(turn.start)}
+        </span>
+        <p style="margin: 5px 0 0 0;">${turn.text}</p>
+      </div>
+    `).join('');
+            } else {
+                conversationHTML = `<p style="text-align: center; color: #718096;">
+      Status: ${transcription.status}
+      ${transcription.error ? `<br>Error: ${transcription.error}` : ''}
+    </p>`;
+            }
+
+            modal.innerHTML = `
+    <div style="background: white; padding: 30px; border-radius: 10px; max-width: 800px; max-height: 80vh; overflow-y: auto;">
+      <h2 style="color: #2d3748; margin-bottom: 20px;">Call Transcription</h2>
+      ${conversationHTML}
+      <button onclick="this.closest('div').parentElement.remove()" 
+        style="margin-top: 20px; padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer;">
+        Close
+      </button>
+    </div>
+  `;
+
+            document.body.appendChild(modal);
+        }
+
+        function formatTimestamp(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
         async function downloadRecording(callId) {
             try {
                 const response = await fetch(`${SERVER_URL}/api/calls/${callId}/recording`, {

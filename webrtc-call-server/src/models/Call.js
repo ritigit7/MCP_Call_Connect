@@ -20,11 +20,31 @@ const callSchema = new mongoose.Schema({
     type: Date
   },
   duration: {
-    type: Number, // in seconds
+    type: Number,
     default: 0
   },
   recordingUrl: {
     type: String
+  },
+  // NEW: Add transcription fields
+  transcription: {
+    status: {
+      type: String,
+      enum: ['pending', 'processing', 'completed', 'failed'],
+      default: 'pending'
+    },
+    conversation: [{
+      start: Number,
+      end: Number,
+      speaker: String,
+      text: String
+    }],
+    metadata: {
+      duration: Number,
+      language: String,
+      processedAt: Date
+    },
+    error: String
   },
   status: {
     type: String,
