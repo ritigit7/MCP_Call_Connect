@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRTC Socket Test</title>
+  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+
+    .section {
+      margin: 20px 0;
+      padding: 20px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+
+    input,
+    select {
+      padding: 10px;
+      margin: 5px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      width: 200px;
+    }
+
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      border: none;
+      border-radius: 5px;
+      background: #4CAF50;
+      color: white;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    button:hover {
+      background: #45a049;
+    }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .log {
+      background: #000;
+      color: #0f0;
+      padding: 15px;
+      border-radius: 5px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+      font-weight: bold;
+    }
+
+    .status.connected {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .status.disconnected {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .info {
+      background: #e7f3ff;
+      padding: 15px;
+      border-left: 4px solid #2196F3;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>🔌 WebRTC Socket.io Test Client</h1>
+
+    <div class="info">
+      <strong>Instructions:</strong> This page tests Socket.io connectivity and signaling.
+      Open this page in two different browsers to test full call flow.
+    </div>
+
+    <div id="status" class="status disconnected">❌ Disconnected</div>
+
+    <!-- Connection Section -->
+    <div class="section">
+      <h3>🔗 Connection</h3>
+      <input type="text" id="serverUrl" value="http://localhost:3000" placeholder="Server URL">
+      <button onclick="connectSocket()">Connect</button>
+      <button onclick="disconnectSocket()">Disconnect</button>
+    </div>
+
+    <!-- User Type Selection -->
+    <div class="section">
+      <h3>👤 User Type</h3>
+      <select id="userType">
+        <option value="agent">Agent</option>
+        <option value="customer">Customer</option>
+      </select>
+      <input type="text" id="userId" placeholder="Enter User ID">
+      <button onclick="joinAsUser()">Join</button>
+    </div>
+
+    <!-- Call Controls -->
+    <div class="section">
+      <h3>📞 Call Controls</h3>
+      <input type="text" id="targetUserId" placeholder="Target User ID">
+      <button onclick="initiateCall()">Initiate Call</button>
+      <button onclick="acceptCall()" id="acceptBtn" disabled>Accept Call</button>
+      <button onclick="endCall()">End Call</button>
+    </div>
+
+    <!-- WebRTC Test -->
+    <div class="section">
+      <h3>🎙️ WebRTC Test</h3>
+      <button onclick="sendOffer()">Send Offer</button>
+      <button onclick="sendAnswer()">Send Answer</button>
+      <button onclick="sendIceCandidate()">Send ICE Candidate</button>
+    </div>
+
+    <!-- Event Log -->
+    <div class="section">
+      <h3>📋 Event Log</h3>
+      <button onclick="clearLog()">Clear Log</button>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <script>
+    let socket = null;
+    let currentCallId = null;
+
+    function log(message, color = '#0f0') {
+      const logDiv = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      logDiv.innerHTML += `<div style="color:${color}">[${time}] ${message}</div>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function clearLog() {
+      document.getElementById('log').innerHTML = '';
+    }
+
+    function updateStatus(connected) {
+      const statusDiv = document.getElementById('status');
+      if (connected) {
+        statusDiv.className = 'status connected';
+        statusDiv.textContent = '✅ Connected';
+      } else {
+        statusDiv.className = 'status disconnected';
+        statusDiv.textContent = '❌ Disconnected';
+      }
+    }
+
+    function connectSocket() {
+      const url = document.getElementById('serverUrl').value;
+      socket = io(url);
+
+      socket.on('connect', () => {
+        log('✅ Connected to server', '#0f0');
+        updateStatus(true);
+      });
+
+      socket.on('disconnect', () => {
+        log('❌ Disconnected from server', '#f00');
+        updateStatus(false);
+      });
+
+      socket.on('agent:joined', (data) => {
+        log('✅ Agent joined successfully', '#0ff');
+      });
+
+      socket.on('customer:joined', (data) => {
+        log('✅ Customer joined successfully', '#0ff');
+      });
+
+      socket.on('call:incoming', (data) => {
+        log(`📞 Incoming call from ${data.customer.name}`, '#ff0');
+        currentCallId = data.callId;
+        document.getElementById('acceptBtn').disabled = false;
+        alert(`Incoming call! Call ID: ${data.callId}`);
+      });
+
+      socket.on('call:initiated', (data) => {
+        log(`📞 Call initiated. Call ID: ${data.callId}`, '#0ff');
+        currentCallId = data.callId;
+      });
+
+      socket.on('call:accepted', (data) => {
+        log(`✅ Call accepted. Call ID: ${data.callId}`, '#0f0');
+      });
+
+      socket.on('call:ended', (data) => {
+        log(`📴 Call ended. Call ID: ${data.callId}`, '#f00');
+        currentCallId = null;
+        document.getElementById('acceptBtn').disabled = true;
+      });
+
+      socket.on('webrtc:offer', (data) => {
+        log(`📨 Received WebRTC offer for call ${data.callId}`, '#ff0');
+      });
+
+      socket.on('webrtc:answer', (data) => {
+        log(`📨 Received WebRTC answer for call ${data.callId}`, '#ff0');
+      });
+
+      socket.on('webrtc:ice-candidate', (data) => {
+        log(`🧊 Received ICE candidate for call ${data.callId}`, '#888');
+      });
+
+      socket.on('error', (data) => {
+        log(`❌ Error: ${data.message}`, '#f00');
+      });
+
+      log('🔄 Connecting to server...', '#ff0');
+    }
+
+    function disconnectSocket() {
+      if (socket) {
+        socket.disconnect();
+        socket = null;
+        log('🔌 Disconnected', '#f00');
+      }
+    }
+
+    function joinAsUser() {
+      const userType = document.getElementById('userType').value;
+      const userId = document.getElementById('userId').value;
+
+      if (!socket) {
+        alert('Please connect first!');
+        return;
+      }
+
+      if (!userId) {
+        alert('Please enter User ID!');
+        return;
+      }
+
+      if (userType === 'agent') {
+        socket.emit('agent:join', { agentId: userId });
+        log(`👤 Joining as Agent: ${userId}`, '#0ff');
+      } else {
+        socket.emit('customer:join', { customerId: userId });
+        log(`👤 Joining as Customer: ${userId}`, '#0ff');
+      }
+    }
+
+    function initiateCall() {
+      const customerId = document.getElementById('userId').value;
+      const agentId = document.getElementById('targetUserId').value;
+
+      if (!socket) {
+        alert('Please connect first!');
+        return;
+      }
+
+      if (!customerId || !agentId) {
+        alert('Please enter both Customer ID and Agent ID!');
+        return;
+      }
+
+      socket.emit('call:initiate', { customerId, agentId });
+      log(`📞 Initiating call from ${customerId} to ${agentId}`, '#0ff');
+    }
+
+    function acceptCall() {
+      if (!currentCallId) {
+        alert('No active call to accept!');
+        return;
+      }
+
+      socket.emit('call:accept', { callId: currentCallId });
+      log(`✅ Accepting call ${currentCallId}`, '#0f0');
+    }
+
+    function endCall() {
+      if (!currentCallId) {
+        alert('No active call to end!');
+        return;
+      }
+
+      socket.emit('call:end', { callId: currentCallId });
+      log(`📴 Ending call ${currentCallId}`, '#f00');
+    }
+
+    function sendOffer() {
+      if (!currentCallId) {
+        alert('No active call!');
+        return;
+      }
+
+      const fakeOffer = { type: 'offer', sdp: 'fake-sdp-offer-data' };
+      socket.emit('webrtc:offer', { callId: currentCallId, offer: fakeOffer });
+      log(`📤 Sent WebRTC offer`, '#0ff');
+    }
+
+    function sendAnswer() {
+      if (!currentCallId) {
+        alert('No active call!');
+        return;
+      }
+
+      const fakeAnswer = { type: 'answer', sdp: 'fake-sdp-answer-data' };
+      socket.emit('webrtc:answer', { callId: currentCallId, answer: fakeAnswer });
+      log(`📤 Sent WebRTC answer`, '#0ff');
+    }
+
+    function sendIceCandidate() {
+      if (!currentCallId) {
+        alert('No active call!');
+        return;
+      }
+
+      const fakeCandidate = { candidate: 'fake-ice-candidate', sdpMid: '0' };
+      socket.emit('webrtc:ice-candidate', { callId: currentCallId, candidate: fakeCandidate });
+      log(`📤 Sent ICE candidate`, '#888');
+    }
+
+    // Auto-connect on load
+    window.onload = () => {
+      log('👋 Welcome to WebRTC Socket Test Client', '#0ff');
+      log('📝 Enter your User ID and connect to get started', '#888');
+    };
+  </script>
+</body>
+
+</html>

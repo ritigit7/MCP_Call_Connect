@@ -1,0 +1,230 @@
+const Agent = require('../models/Agent');
+const Customer = require('../models/Customer');
+const Call = require('../models/Call');
+const { v4: uuidv4 } = require('uuid');
+
+class SignalingService {
+  constructor(io) {
+    this.io = io;
+    this.activeCalls = new Map(); // callId -> { agentSocket, customerSocket, callDoc }
+  }
+
+  initialize() {
+    this.io.on('connection', (socket) => {
+      console.log(`✅ Client connected: ${socket.id}`);
+
+      // Agent joins
+      socket.on('agent:join', async (data) => {
+        try {
+          const { agentId } = data;
+          await Agent.findByIdAndUpdate(agentId, {
+            socketId: socket.id,
+            status: 'online'
+          });
+          socket.agentId = agentId;
+          console.log(`🟢 Agent ${agentId} joined`);
+          socket.emit('agent:joined', { success: true });
+        } catch (error) {
+          socket.emit('error', { message: error.message });
+        }
+      });
+
+      // Customer joins
+      socket.on('customer:join', async (data) => {
+        try {
+          const { customerId } = data;
+          await Customer.findByIdAndUpdate(customerId, { socketId: socket.id });
+          socket.customerId = customerId;
+          console.log(`🟢 Customer ${customerId} joined`);
+          socket.emit('customer:joined', { success: true });
+        } catch (error) {
+          socket.emit('error', { message: error.message });
+        }
+      });
+
+      // Initiate call (from customer to agent)
+      socket.on('call:initiate', async (data) => {
+        try {
+          const { customerId, agentId } = data;
+
+          const agent = await Agent.findById(agentId);
+          const customer = await Customer.findById(customerId);
+
+          if (!agent || !customer) {
+            return socket.emit('error', { message: 'Agent or Customer not found' });
+          }
+
+          if (agent.status !== 'online') {
+            return socket.emit('error', { message: 'Agent is not available' });
+          }
+
+          // Create call record
+          const callId = uuidv4();
+          const call = new Call({
+            agent: agentId,
+            customer: customerId,
+            callId,
+            status: 'initiated'
+          });
+          await call.save();
+
+          // Store in active calls
+          this.activeCalls.set(callId, {
+            agentSocketId: agent.socketId,
+            customerSocketId: socket.id,
+            callDoc: call
+          });
+
+          // Update agent status
+          await Agent.findByIdAndUpdate(agentId, { status: 'busy' });
+
+          // Notify agent about incoming call
+          this.io.to(agent.socketId).emit('call:incoming', {
+            callId,
+            customer: {
+              id: customer._id,
+              name: customer.name,
+              email: customer.email
+            }
+          });
+
+          socket.emit('call:initiated', { callId });
+          console.log(`📞 Call initiated: ${callId}`);
+        } catch (error) {
+          socket.emit('error', { message: error.message });
+        }
+      });
+
+      // Agent accepts call
+      socket.on('call:accept', async (data) => {
+        try {
+          const { callId } = data;
+          const callData = this.activeCalls.get(callId);
+
+          if (!callData) {
+            return socket.emit('error', { message: 'Call not found' });
+          }
+
+          // Update call status
+          await Call.findOneAndUpdate(
+            { callId },
+            { status: 'ongoing', startTime: new Date() }
+          );
+
+          // Notify customer that call was accepted
+          this.io.to(callData.customerSocketId).emit('call:accepted', { callId });
+          console.log(`✅ Call accepted: ${callId}`);
+        } catch (error) {
+          socket.emit('error', { message: error.message });
+        }
+      });
+
+      // WebRTC signaling - offer
+      socket.on('webrtc:offer', (data) => {
+        const { callId, offer } = data;
+        const callData = this.activeCalls.get(callId);
+
+        if (callData) {
+          const targetSocket = socket.id === callData.agentSocketId
+            ? callData.customerSocketId
+            : callData.agentSocketId;
+
+          this.io.to(targetSocket).emit('webrtc:offer', { callId, offer });
+        }
+      });
+
+      // WebRTC signaling - answer
+      socket.on('webrtc:answer', (data) => {
+        const { callId, answer } = data;
+        const callData = this.activeCalls.get(callId);
+
+        if (callData) {
+          const targetSocket = socket.id === callData.agentSocketId
+            ? callData.customerSocketId
+            : callData.agentSocketId;
+
+          this.io.to(targetSocket).emit('webrtc:answer', { callId, answer });
+        }
+      });
+
+      // WebRTC signaling - ICE candidate
+      socket.on('webrtc:ice-candidate', (data) => {
+        const { callId, candidate } = data;
+        const callData = this.activeCalls.get(callId);
+
+        if (callData) {
+          const targetSocket = socket.id === callData.agentSocketId
+            ? callData.customerSocketId
+            : callData.agentSocketId;
+
+          this.io.to(targetSocket).emit('webrtc:ice-candidate', { callId, candidate });
+        }
+      });
+
+      // End call
+      socket.on('call:end', async (data) => {
+        try {
+          const { callId } = data;
+          await this.endCall(callId);
+        } catch (error) {
+          socket.emit('error', { message: error.message });
+        }
+      });
+
+      // Disconnect
+      socket.on('disconnect', async () => {
+        console.log(`❌ Client disconnected: ${socket.id}`);
+
+        // Update agent status
+        if (socket.agentId) {
+          await Agent.findByIdAndUpdate(socket.agentId, {
+            status: 'offline',
+            socketId: null
+          });
+        }
+
+        // Update customer
+        if (socket.customerId) {
+          await Customer.findByIdAndUpdate(socket.customerId, { socketId: null });
+        }
+
+        // End any active calls
+        for (const [callId, callData] of this.activeCalls.entries()) {
+          if (callData.agentSocketId === socket.id || callData.customerSocketId === socket.id) {
+            await this.endCall(callId);
+          }
+        }
+      });
+    });
+  }
+
+  async endCall(callId) {
+    const callData = this.activeCalls.get(callId);
+    if (!callData) return;
+
+    // Update call record
+    const call = await Call.findOneAndUpdate(
+      { callId },
+      {
+        endTime: new Date(),
+        status: 'completed'
+      },
+      { new: true }
+    );
+
+    // Notify both parties
+    this.io.to(callData.agentSocketId).emit('call:ended', { callId });
+    this.io.to(callData.customerSocketId).emit('call:ended', { callId });
+
+    // Update agent status back to online
+    if (call) {
+      await Agent.findByIdAndUpdate(call.agent, { status: 'online' });
+    }
+
+    // Remove from active calls
+    this.activeCalls.delete(callId);
+    console.log(`📴 Call ended: ${callId}`);
+  }
+}
+
+module.exports = SignalingService;

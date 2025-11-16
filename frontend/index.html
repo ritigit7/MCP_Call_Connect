@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Call Center</title>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        .recording-pulse {
+            animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        /* Audio visualizer bars */
+        @keyframes audioBar {
+
+            0%,
+            100% {
+                height: 20%;
+            }
+
+            50% {
+                height: 100%;
+            }
+        }
+
+        .audio-bar {
+            animation: audioBar 0.8s ease-in-out infinite;
+        }
+
+        .audio-bar:nth-child(2) {
+            animation-delay: 0.1s;
+        }
+
+        .audio-bar:nth-child(3) {
+            animation-delay: 0.2s;
+        }
+
+        .audio-bar:nth-child(4) {
+            animation-delay: 0.3s;
+        }
+
+        .audio-bar:nth-child(5) {
+            animation-delay: 0.4s;
+        }
+    </style>
+</head>
+
+<body class="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 min-h-screen p-4">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="bg-white rounded-xl shadow-lg p-6 mb-6 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div
+                    class="w-12 h-12 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <span class="text-2xl">📞</span>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-800">WebRTC Call Center</h1>
+                    <p class="text-sm text-gray-500">Real-time voice communication</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-3">
+                <span id="connectionStatus"
+                    class="px-4 py-2 rounded-full text-sm font-semibold bg-red-100 text-red-700">
+                    Disconnected
+                </span>
+                <audio id="remoteAudio" autoplay></audio>
+            </div>
+        </header>
+
+        <!-- Tabs -->
+        <div class="flex space-x-2 mb-6">
+            <button onclick="showTab('agent')"
+                class="tab-btn active px-6 py-3 bg-white rounded-lg font-semibold transition-all hover:shadow-lg">
+                👨‍💼 Agent
+            </button>
+            <button onclick="showTab('customer')"
+                class="tab-btn px-6 py-3 bg-white/80 rounded-lg font-semibold transition-all hover:shadow-lg">
+                👤 Customer
+            </button>
+            <button onclick="showTab('calls')"
+                class="tab-btn px-6 py-3 bg-white/80 rounded-lg font-semibold transition-all hover:shadow-lg">
+                📊 Call History
+            </button>
+        </div>
+
+        <!-- Agent Tab -->
+        <div id="agent-tab" class="tab-content">
+            <!-- Agent Auth -->
+            <div id="agentAuth" class="space-y-6">
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- Login Card -->
+                    <div class="bg-white rounded-xl shadow-lg p-8 slide-in">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Agent Login</h2>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                                <input type="email" id="agentLoginEmail"
+                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none"
+                                    placeholder="agent@example.com">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                                <input type="password" id="agentLoginPassword"
+                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none"
+                                    placeholder="••••••••">
+                            </div>
+                            <button onclick="agentLogin()"
+                                class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-lg font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition-all">
+                                Login
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Register Card -->
+                    <div class="bg-white rounded-xl shadow-lg p-8 slide-in" style="animation-delay: 0.1s">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Register Agent</h2>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Name</label>
+                                <input type="text" id="agentRegName"
+                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none"
+                                    placeholder="John Doe">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                                <input type="email" id="agentRegEmail"
+                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none"
+                                    placeholder="agent@example.com">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                                <input type="password" id="agentRegPassword"
+                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none"
+                                    placeholder="••••••••">
+                            </div>
+                            <button onclick="agentRegister()"
+                                class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 rounded-lg font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition-all">
+                                Register
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent Dashboard -->
+            <div id="agentDashboard" class="hidden space-y-6">
+                <div id="agentAlert"></div>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- Agent Info -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">Agent Information</h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center py-2 border-b">
+                                <span class="font-medium text-gray-600">Name:</span>
+                                <span id="agentName" class="text-gray-800">-</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b">
+                                <span class="font-medium text-gray-600">Email:</span>
+                                <span id="agentEmail" class="text-gray-800">-</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2">
+                                <span class="font-medium text-gray-600">Status:</span>
+                                <span id="agentStatus" class="text-gray-800">-</span>
+                            </div>
+                        </div>
+                        <button onclick="agentLogout()"
+                            class="w-full mt-6 bg-red-500 text-white py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors">
+                            Logout
+                        </button>
+                    </div>
+
+                    <!-- Current Call -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">Current Call</h3>
+                        <div id="callInfo">
+                            <div class="text-center py-8 text-gray-500">
+                                <span class="text-4xl mb-2 block">📞</span>
+                                <p>No active call</p>
+                            </div>
+                        </div>
+                        <div id="callControls" class="hidden space-y-4">
+                            <!-- Audio Visualizer -->
+                            <div
+                                class="bg-gradient-to-r from-green-400 to-blue-500 rounded-lg p-6 flex items-center justify-center space-x-2">
+                                <div class="flex items-end space-x-1 h-16">
+                                    <div class="audio-bar w-2 bg-white rounded-full"></div>
+                                    <div class="audio-bar w-2 bg-white rounded-full"></div>
+                                    <div class="audio-bar w-2 bg-white rounded-full"></div>
+                                    <div class="audio-bar w-2 bg-white rounded-full"></div>
+                                    <div class="audio-bar w-2 bg-white rounded-full"></div>
+                                </div>
+                                <span class="text-white font-bold text-lg ml-4">Call Active</span>
+                                <div class="w-3 h-3 bg-red-500 rounded-full recording-pulse ml-2"></div>
+                            </div>
+
+                            <div class="flex gap-3">
+                                <button onclick="endCurrentCall()"
+                                    class="flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors">
+                                    End Call
+                                </button>
+                                <button onclick="muteToggle()" id="muteBtn"
+                                    class="flex-1 bg-gray-700 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-colors">
+                                    Mute
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Event Log -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold text-gray-800">📋 Event Log</h3>
+                        <button onclick="clearLogs()"
+                            class="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-semibold hover:bg-indigo-600 transition-colors">
+                            Clear Logs
+                        </button>
+                    </div>
+                    <div id="agentLogs"
+                        class="bg-gray-900 text-green-400 p-4 rounded-lg h-64 overflow-y-auto font-mono text-sm"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Customer Tab -->
+        <div id="customer-tab" class="tab-content hidden">
+            <!-- Customer Auth -->
+            <div id="customerAuth" class="max-w-2xl mx-auto">
+                <div class="bg-white rounded-xl shadow-lg p-8">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">Customer Registration</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Name</label>
+                            <input type="text" id="customerName"
+                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none"
+                                placeholder="Jane Doe">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                            <input type="email" id="customerEmail"
+                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none"
+                                placeholder="customer@example.com">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                            <input type="tel" id="customerPhone"
+                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none"
+                                placeholder="+1234567890">
+                        </div>
+                        <button onclick="customerRegister()"
+                            class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 rounded-lg font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition-all">
+                            Register & Connect
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Customer Dashboard -->
+            <div id="customerDashboard" class="hidden space-y-6">
+                <div id="customerAlert"></div>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- Customer Info -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">Your Information</h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center py-2 border-b">
+                                <span class="font-medium text-gray-600">Name:</span>
+                                <span id="customerNameDisplay" class="text-gray-800">-</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2">
+                                <span class="font-medium text-gray-600">Email:</span>
+                                <span id="customerEmailDisplay" class="text-gray-800">-</span>
+                            </div>
+                        </div>
+                        <button onclick="customerDisconnect()"
+                            class="w-full mt-6 bg-red-500 text-white py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors">
+                            Disconnect
+                        </button>
+                    </div>
+
+                    <!-- Make Call -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">Make a Call</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Select Agent</label>
+                                <select id="agentSelect"
+                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none">
+                                    <option value="">Loading agents...</option>
+                                </select>
+                            </div>
+                            <button onclick="initiateCall()" id="callBtn"
+                                class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-lg font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition-all">
+                                📞 Call Agent
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Call -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">Current Call</h3>
+                    <div id="customerCallInfo">
+                        <div class="text-center py-8 text-gray-500">
+                            <span class="text-4xl mb-2 block">📞</span>
+                            <p>No active call</p>
+                        </div>
+                    </div>
+                    <div id="customerCallControls" class="hidden space-y-4">
+                        <!-- Audio Visualizer -->
+                        <div
+                            class="bg-gradient-to-r from-green-400 to-blue-500 rounded-lg p-6 flex items-center justify-center space-x-2">
+                            <div class="flex items-end space-x-1 h-16">
+                                <div class="audio-bar w-2 bg-white rounded-full"></div>
+                                <div class="audio-bar w-2 bg-white rounded-full"></div>
+                                <div class="audio-bar w-2 bg-white rounded-full"></div>
+                                <div class="audio-bar w-2 bg-white rounded-full"></div>
+                                <div class="audio-bar w-2 bg-white rounded-full"></div>
+                            </div>
+                            <span class="text-white font-bold text-lg ml-4">Call Active</span>
+                            <div class="w-3 h-3 bg-red-500 rounded-full recording-pulse ml-2"></div>
+                        </div>
+
+                        <div class="flex gap-3">
+                            <button onclick="endCurrentCall()"
+                                class="flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors">
+                                End Call
+                            </button>
+                            <button onclick="muteToggle()" id="customerMuteBtn"
+                                class="flex-1 bg-gray-700 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-colors">
+                                Mute
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Event Log -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold text-gray-800">📋 Event Log</h3>
+                        <button onclick="clearLogs()"
+                            class="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-semibold hover:bg-indigo-600 transition-colors">
+                            Clear Logs
+                        </button>
+                    </div>
+                    <div id="customerLogs"
+                        class="bg-gray-900 text-green-400 p-4 rounded-lg h-64 overflow-y-auto font-mono text-sm"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Call History Tab -->
+        <div id="calls-tab" class="tab-content hidden">
+            <div class="space-y-6">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-2xl font-bold text-white">Call History & Statistics</h2>
+                    <button onclick="loadCallHistory()"
+                        class="px-6 py-3 bg-white text-indigo-600 rounded-lg font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition-all">
+                        🔄 Refresh
+                    </button>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="grid md:grid-cols-3 gap-6">
+                    <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
+                        <div class="text-5xl font-bold mb-2" id="totalCalls">0</div>
+                        <div class="text-blue-100">Total Calls</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white">
+                        <div class="text-5xl font-bold mb-2" id="completedCalls">0</div>
+                        <div class="text-green-100">Completed</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
+                        <div class="text-5xl font-bold mb-2" id="avgDuration">0s</div>
+                        <div class="text-purple-100">Avg Duration</div>
+                    </div>
+                </div>
+
+                <!-- Calls List -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">Recent Calls</h3>
+                    <div id="callsList" class="space-y-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SERVER_URL = 'https://hsbd23p5-3000.inc1.devtunnels.ms';
+        let socket = null;
+        let currentUser = null;
+        let currentRole = null;
+        let agentToken = null;
+        let currentCallId = null;
+        let peerConnection = null;
+        let localStream = null;
+        let remoteStream = null;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let isMuted = false;
+        let audioContext = null;
+        let mixedStreamDestination = null;
+
+        // Tab Management
+        function showTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(t => {
+                t.classList.remove('active', 'bg-white');
+                t.classList.add('bg-white/80');
+            });
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+
+            event.target.classList.add('active', 'bg-white');
+            event.target.classList.remove('bg-white/80');
+            document.getElementById(`${tab}-tab`).classList.remove('hidden');
+        }
+
+        // Logging
+        function log(message, color = '#0f0', target = 'agentLogs') {
+            const logDiv = document.getElementById(target);
+            if (!logDiv) return;
+
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'mb-1';
+            entry.innerHTML = `<span class="text-blue-400">[${time}]</span> <span style="color:${color}">${message}</span>`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLogs() {
+            const target = currentRole === 'agent' ? 'agentLogs' : 'customerLogs';
+            document.getElementById(target).innerHTML = '';
+        }
+
+        function showAlert(message, type = 'info', target = 'agentAlert') {
+            const alertDiv = document.getElementById(target);
+            const colors = {
+                info: 'bg-blue-100 text-blue-700 border-blue-500',
+                success: 'bg-green-100 text-green-700 border-green-500',
+                error: 'bg-red-100 text-red-700 border-red-500'
+            };
+            alertDiv.innerHTML = `<div class="slide-in ${colors[type]} border-l-4 p-4 rounded-lg mb-4">${message}</div>`;
+            setTimeout(() => alertDiv.innerHTML = '', 5000);
+        }
+
+        // Socket Connection
+        function connectSocket() {
+            socket = io(SERVER_URL);
+
+            socket.on('connect', () => {
+                document.getElementById('connectionStatus').className = 'px-4 py-2 rounded-full text-sm font-semibold bg-green-100 text-green-700';
+                document.getElementById('connectionStatus').textContent = '✓ Connected';
+                log('✅ Connected to server', '#0f0', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+            });
+
+            socket.on('disconnect', () => {
+                document.getElementById('connectionStatus').className = 'px-4 py-2 rounded-full text-sm font-semibold bg-red-100 text-red-700';
+                document.getElementById('connectionStatus').textContent = 'Disconnected';
+                log('❌ Disconnected from server', '#f00', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+            });
+
+            socket.on('agent:joined', () => {
+                log('✅ Agent joined successfully', '#0ff', 'agentLogs');
+            });
+
+            socket.on('customer:joined', () => {
+                log('✅ Customer joined successfully', '#0ff', 'customerLogs');
+            });
+
+            socket.on('call:incoming', async (data) => {
+                log(`📞 Incoming call from ${data.customer.name}`, '#ff0', 'agentLogs');
+                currentCallId = data.callId;
+
+                document.getElementById('callInfo').innerHTML = `
+                    <div class="space-y-2 mb-4">
+                        <div class="flex justify-between py-2 border-b"><span class="font-medium">Customer:</span><span>${data.customer.name}</span></div>
+                        <div class="flex justify-between py-2 border-b"><span class="font-medium">Email:</span><span>${data.customer.email}</span></div>
+                        <div class="flex justify-between py-2"><span class="font-medium">Call ID:</span><span class="text-xs">${data.callId}</span></div>
+                    </div>
+                    <button onclick="acceptCall()" class="w-full bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition-colors">
+                        ✓ Accept Call
+                    </button>
+                `;
+            });
+
+            socket.on('call:initiated', (data) => {
+                currentCallId = data.callId;
+                log(`📞 Call initiated. Call ID: ${data.callId}`, '#0ff', 'customerLogs');
+                showAlert('Call initiated. Waiting for agent to accept...', 'info', 'customerAlert');
+            });
+
+            socket.on('call:accepted', async (data) => {
+                log(`✅ Call accepted`, '#0f0', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                showAlert('Call accepted! Setting up connection...', 'success', currentRole === 'agent' ? 'agentAlert' : 'customerAlert');
+
+                if (currentRole === 'customer') {
+                    await setupWebRTC();
+                    await createOffer();
+                }
+            });
+
+            socket.on('call:ended', () => {
+                log(`🔴 Call ended`, '#f00', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                cleanupCall();
+            });
+
+            socket.on('webrtc:offer', async (data) => {
+                log(`📨 Received WebRTC offer`, '#ff0', 'agentLogs');
+                await handleOffer(data.offer);
+            });
+
+            socket.on('webrtc:answer', async (data) => {
+                log(`📨 Received WebRTC answer`, '#ff0', 'customerLogs');
+                await handleAnswer(data.answer);
+            });
+
+            socket.on('webrtc:ice-candidate', async (data) => {
+                if (peerConnection && data.candidate) {
+                    try {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                        log('🧊 ICE candidate added', '#0ff', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                    } catch (error) {
+                        log(`❌ ICE candidate error: ${error.message}`, '#f00', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                    }
+                }
+            });
+
+            socket.on('error', (data) => {
+                log(`❌ Error: ${data.message}`, '#f00', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                showAlert(data.message, 'error', currentRole === 'agent' ? 'agentAlert' : 'customerAlert');
+            });
+
+            socket.on('recording:saved', (data) => {
+                log(`💾 Recording saved on server: ${data.filePath}`, '#0f0', 'agentLogs');
+                showAlert('Recording saved successfully!', 'success', 'agentAlert');
+                if (data.size) {
+                    log(`📦 File size: ${(data.size / 1024).toFixed(2)} KB`, '#0ff', 'agentLogs');
+                }
+            });
+
+            socket.on('recording:error', (data) => {
+                log(`❌ Recording error: ${data.error}`, '#f00', 'agentLogs');
+                showAlert(`Recording failed: ${data.error}`, 'error', 'agentAlert');
+            });
+        }
+
+        // Agent Functions
+        async function agentRegister() {
+            const name = document.getElementById('agentRegName').value;
+            const email = document.getElementById('agentRegEmail').value;
+            const password = document.getElementById('agentRegPassword').value;
+
+            if (!name || !email || !password) {
+                alert('Please fill all fields');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${SERVER_URL}/api/agents/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email, password })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    agentToken = data.token;
+                    currentUser = data.agent;
+                    currentRole = 'agent';
+                    showAgentDashboard();
+                    connectSocket();
+                    socket.emit('agent:join', { agentId: currentUser.id });
+                } else {
+                    alert(data.error || 'Registration failed');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function agentLogin() {
+            const email = document.getElementById('agentLoginEmail').value;
+            const password = document.getElementById('agentLoginPassword').value;
+
+            if (!email || !password) {
+                alert('Please fill all fields');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${SERVER_URL}/api/agents/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    agentToken = data.token;
+                    currentUser = data.agent;
+                    currentRole = 'agent';
+                    showAgentDashboard();
+                    connectSocket();
+                    socket.emit('agent:join', { agentId: currentUser.id });
+                } else {
+                    alert(data.error || 'Login failed');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        function showAgentDashboard() {
+            document.getElementById('agentAuth').classList.add('hidden');
+            document.getElementById('agentDashboard').classList.remove('hidden');
+            document.getElementById('agentName').textContent = currentUser.name;
+            document.getElementById('agentEmail').textContent = currentUser.email;
+            document.getElementById('agentStatus').innerHTML = '<span class="px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">● Online</span>';
+        }
+
+        function agentLogout() {
+            if (socket) socket.disconnect();
+            currentUser = null;
+            agentToken = null;
+            currentRole = null;
+            document.getElementById('agentAuth').classList.remove('hidden');
+            document.getElementById('agentDashboard').classList.add('hidden');
+            document.getElementById('agentLoginEmail').value = '';
+            document.getElementById('agentLoginPassword').value = '';
+        }
+
+        // Customer Functions
+        async function customerRegister() {
+            const name = document.getElementById('customerName').value;
+            const email = document.getElementById('customerEmail').value;
+            const phone = document.getElementById('customerPhone').value;
+
+            if (!name || !email || !phone) {
+                alert('Please fill all fields');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${SERVER_URL}/api/customers/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email, phone })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    currentUser = data.customer;
+                    currentRole = 'customer';
+                    showCustomerDashboard();
+                    connectSocket();
+                    socket.emit('customer:join', { customerId: currentUser.id });
+                    await loadAgents();
+                } else {
+                    alert(data.error || 'Registration failed');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        function showCustomerDashboard() {
+            document.getElementById('customerAuth').classList.add('hidden');
+            document.getElementById('customerDashboard').classList.remove('hidden');
+            document.getElementById('customerNameDisplay').textContent = currentUser.name;
+            document.getElementById('customerEmailDisplay').textContent = currentUser.email;
+        }
+
+        function customerDisconnect() {
+            if (socket) socket.disconnect();
+            currentUser = null;
+            currentRole = null;
+            document.getElementById('customerAuth').classList.remove('hidden');
+            document.getElementById('customerDashboard').classList.add('hidden');
+        }
+
+        async function loadAgents() {
+            try {
+                const response = await fetch(`${SERVER_URL}/api/agents/all`);
+                const data = await response.json();
+
+                const select = document.getElementById('agentSelect');
+                select.innerHTML = '<option value="">Select an agent</option>';
+
+                data.agents.forEach(agent => {
+                    const option = document.createElement('option');
+                    option.value = agent._id;
+                    option.textContent = `${agent.name} - ${agent.status}`;
+                    option.disabled = agent.status !== 'online';
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading agents:', error);
+            }
+        }
+
+        function initiateCall() {
+            const agentId = document.getElementById('agentSelect').value;
+            if (!agentId) {
+                alert('Please select an agent');
+                return;
+            }
+
+            socket.emit('call:initiate', {
+                customerId: currentUser.id,
+                agentId: agentId
+            });
+
+            document.getElementById('customerCallInfo').innerHTML = '<p class="text-center py-8 text-gray-500">📞 Calling agent...</p>';
+            log('📞 Initiating call...', '#0ff', 'customerLogs');
+        }
+
+        // WebRTC Functions with Enhanced Audio Handling
+        async function setupWebRTC() {
+            try {
+                // Request audio with enhanced constraints for better quality
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 48000
+                    },
+                    video: false
+                });
+
+                log('🎤 Local microphone captured', '#0f0', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+
+                // Create peer connection with optimized configuration
+                peerConnection = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' }
+                    ],
+                    iceCandidatePoolSize: 10
+                });
+
+                // Add local tracks to peer connection
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                    log(`✅ Added local ${track.kind} track`, '#0ff', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                });
+
+                // Setup remote audio
+                const remoteAudio = document.getElementById('remoteAudio');
+                remoteStream = new MediaStream();
+                remoteAudio.srcObject = remoteStream;
+
+                // Handle incoming tracks
+                peerConnection.ontrack = (event) => {
+                    log('🎵 Received remote track', '#0ff', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                    event.streams[0].getTracks().forEach(track => {
+                        remoteStream.addTrack(track);
+                        log(`✅ Added remote ${track.kind} track`, '#0ff', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                    });
+
+                    // Ensure audio plays
+                    remoteAudio.play().catch(e => {
+                        log('⚠️ Audio autoplay prevented - user interaction required', '#ff0', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                    });
+
+                    // Start recording for agent after remote track is received
+                    if (currentRole === 'agent' && !mediaRecorder) {
+                        setTimeout(() => {
+                            startRecording();
+                        }, 1000);
+                    }
+                };
+
+                // Handle ICE candidates
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.emit('webrtc:ice-candidate', {
+                            callId: currentCallId,
+                            candidate: event.candidate
+                        });
+                        log('🧊 ICE candidate sent', '#0ff', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                    }
+                };
+
+                // Monitor connection state
+                peerConnection.onconnectionstatechange = () => {
+                    const state = peerConnection.connectionState;
+                    log(`🔗 Connection state: ${state}`, '#0ff', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+
+                    if (state === 'connected') {
+                        log('✅ Peer connection established successfully!', '#0f0', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                    } else if (state === 'failed' || state === 'disconnected') {
+                        log('❌ Connection failed or disconnected', '#f00', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                    }
+                };
+
+                // Monitor ICE connection state
+                peerConnection.oniceconnectionstatechange = () => {
+                    log(`❄️ ICE state: ${peerConnection.iceConnectionState}`, '#0ff', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                };
+
+                showCallControls();
+            } catch (error) {
+                log(`❌ Error setting up WebRTC: ${error.message}`, '#f00', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                showAlert(`Microphone access denied or error: ${error.message}`, 'error', currentRole === 'agent' ? 'agentAlert' : 'customerAlert');
+            }
+        }
+
+        async function createOffer() {
+            try {
+                const offer = await peerConnection.createOffer({
+                    offerToReceiveAudio: true,
+                    voiceActivityDetection: true
+                });
+                await peerConnection.setLocalDescription(offer);
+
+                socket.emit('webrtc:offer', {
+                    callId: currentCallId,
+                    offer: offer
+                });
+
+                log('📤 Sent WebRTC offer', '#0ff', 'customerLogs');
+            } catch (error) {
+                log(`❌ Error creating offer: ${error.message}`, '#f00', 'customerLogs');
+            }
+        }
+
+        async function handleOffer(offer) {
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+                log('✅ Remote description set', '#0ff', 'agentLogs');
+
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+
+                socket.emit('webrtc:answer', {
+                    callId: currentCallId,
+                    answer: answer
+                });
+
+                log('📤 Sent WebRTC answer', '#0ff', 'agentLogs');
+            } catch (error) {
+                log(`❌ Error handling offer: ${error.message}`, '#f00', 'agentLogs');
+            }
+        }
+
+        async function handleAnswer(answer) {
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+                log('✅ WebRTC connection established', '#0f0', 'customerLogs');
+            } catch (error) {
+                log(`❌ Error handling answer: ${error.message}`, '#f00', 'customerLogs');
+            }
+        }
+
+        async function acceptCall() {
+            socket.emit('call:accept', { callId: currentCallId });
+            log('✅ Accepting call...', '#0f0', 'agentLogs');
+            await setupWebRTC();
+        }
+
+        function showCallControls() {
+            if (currentRole === 'agent') {
+                document.getElementById('callControls').classList.remove('hidden');
+            } else {
+                document.getElementById('customerCallControls').classList.remove('hidden');
+                document.getElementById('customerCallInfo').innerHTML = '<p class="text-center py-4 text-green-600 font-semibold">✓ Call Connected</p>';
+            }
+        }
+
+        // Enhanced Recording with Mixed Audio
+        function startRecording() {
+            try {
+                recordedChunks = [];
+
+                // Create audio context for mixing
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                mixedStreamDestination = audioContext.createMediaStreamDestination();
+
+                // Mix local audio (agent's voice)
+                if (localStream) {
+                    const localSource = audioContext.createMediaStreamSource(localStream);
+                    const localGain = audioContext.createGain();
+                    localGain.gain.value = 1.0;
+                    localSource.connect(localGain);
+                    localGain.connect(mixedStreamDestination);
+                    log('🎤 Local audio added to recording mix', '#0ff', 'agentLogs');
+                }
+
+                // Mix remote audio (customer's voice)
+                if (remoteStream && remoteStream.getAudioTracks().length > 0) {
+                    const remoteSource = audioContext.createMediaStreamSource(remoteStream);
+                    const remoteGain = audioContext.createGain();
+                    remoteGain.gain.value = 1.0;
+                    remoteSource.connect(remoteGain);
+                    remoteGain.connect(mixedStreamDestination);
+                    log('📊 Remote audio added to recording mix', '#0ff', 'agentLogs');
+                }
+
+                // Setup MediaRecorder with mixed stream
+                const combinedStream = mixedStreamDestination.stream;
+
+                let options;
+                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    options = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 128000 };
+                } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+                    options = { mimeType: 'audio/webm', audioBitsPerSecond: 128000 };
+                } else {
+                    log('⚠️ WebM not supported, using default format', '#ff0', 'agentLogs');
+                    options = { audioBitsPerSecond: 128000 };
+                }
+
+                mediaRecorder = new MediaRecorder(combinedStream, options);
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data && event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                        log(`📼 Chunk recorded: ${(event.data.size / 1024).toFixed(2)} KB`, '#0ff', 'agentLogs');
+                    }
+                };
+
+                mediaRecorder.onerror = (event) => {
+                    log(`❌ MediaRecorder error: ${event.error}`, '#f00', 'agentLogs');
+                };
+
+                mediaRecorder.onstart = () => {
+                    log('🔴 Recording started (full conversation)', '#0f0', 'agentLogs');
+                };
+
+                mediaRecorder.onstop = () => {
+                    log('⏹️ Recording stopped', '#ff0', 'agentLogs');
+                };
+
+                // Start recording with 1-second chunks
+                mediaRecorder.start(1000);
+
+            } catch (error) {
+                log(`❌ Recording setup error: ${error.message}`, '#f00', 'agentLogs');
+            }
+        }
+
+        async function stopRecording() {
+            if (currentRole !== 'agent' || !mediaRecorder || mediaRecorder.state === 'inactive') {
+                return Promise.resolve();
+            }
+
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('Recording stop timeout'));
+                }, 5000);
+
+                mediaRecorder.onstop = async () => {
+                    clearTimeout(timeout);
+
+                    try {
+                        const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+
+                        if (blob.size === 0) {
+                            log('⚠️ No audio data recorded', '#ff0', 'agentLogs');
+                            resolve();
+                            return;
+                        }
+
+                        log(`📦 Recording size: ${(blob.size / 1024).toFixed(2)} KB`, '#0ff', 'agentLogs');
+
+                        const reader = new FileReader();
+
+                        reader.onerror = () => {
+                            log('❌ Error reading recording blob', '#f00', 'agentLogs');
+                            reject(new Error('FileReader error'));
+                        };
+
+                        reader.onloadend = () => {
+                            try {
+                                const base64data = reader.result.split(',')[1];
+
+                                socket.emit('recording:complete', {
+                                    callId: currentCallId,
+                                    audioBlob: base64data,
+                                    format: 'webm'
+                                });
+
+                                log('💾 Recording uploaded to server', '#0f0', 'agentLogs');
+                                recordedChunks = [];
+                                resolve();
+                            } catch (error) {
+                                log(`❌ Error processing recording: ${error.message}`, '#f00', 'agentLogs');
+                                reject(error);
+                            }
+                        };
+
+                        reader.readAsDataURL(blob);
+                    } catch (error) {
+                        log(`❌ Error creating blob: ${error.message}`, '#f00', 'agentLogs');
+                        reject(error);
+                    }
+                };
+
+                if (mediaRecorder.state === 'recording') {
+                    mediaRecorder.stop();
+                } else {
+                    resolve();
+                }
+            });
+        }
+
+        function muteToggle() {
+            if (!localStream) return;
+
+            isMuted = !isMuted;
+            localStream.getAudioTracks().forEach(track => {
+                track.enabled = !isMuted;
+            });
+
+            const btnId = currentRole === 'agent' ? 'muteBtn' : 'customerMuteBtn';
+            const btn = document.getElementById(btnId);
+            btn.textContent = isMuted ? '🔇 Unmute' : '🔇 Mute';
+            btn.className = isMuted ? 'flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors' : 'flex-1 bg-gray-700 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-colors';
+
+            log(isMuted ? '🔇 Microphone muted' : '🔊 Microphone unmuted', '#ff0', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+        }
+
+        async function endCurrentCall() {
+            socket.emit('call:end', { callId: currentCallId });
+            await cleanupCall();
+        }
+
+        async function cleanupCall() {
+            log('🧹 Starting call cleanup...', '#ff0', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+
+            // Stop recording first
+            try {
+                if (currentRole === 'agent') {
+                    await stopRecording();
+                    log('✅ Recording stopped and saved', '#0f0', 'agentLogs');
+                }
+            } catch (error) {
+                log(`⚠️ Recording stop error: ${error.message}`, '#ff0', 'agentLogs');
+            }
+
+            // Close audio context
+            if (audioContext && audioContext.state !== 'closed') {
+                try {
+                    await audioContext.close();
+                    log('🔊 Audio context closed', '#0ff', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                } catch (error) {
+                    log(`⚠️ Audio context close error: ${error.message}`, '#ff0', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                }
+            }
+
+            // Stop local tracks
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    track.stop();
+                    log(`🛑 Stopped ${track.kind} track`, '#0ff', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+                });
+                localStream = null;
+            }
+
+            // Close peer connection
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+                log('🔌 Peer connection closed', '#0ff', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+            }
+
+            // Reset remote audio
+            const remoteAudio = document.getElementById('remoteAudio');
+            if (remoteAudio) {
+                remoteAudio.srcObject = null;
+            }
+
+            // Reset variables
+            currentCallId = null;
+            isMuted = false;
+            mediaRecorder = null;
+            remoteStream = null;
+            audioContext = null;
+            mixedStreamDestination = null;
+
+            // Reset UI
+            if (currentRole === 'agent') {
+                document.getElementById('callControls').classList.add('hidden');
+                document.getElementById('callInfo').innerHTML = '<div class="text-center py-8 text-gray-500"><span class="text-4xl mb-2 block">📞</span><p>No active call</p></div>';
+            } else {
+                document.getElementById('customerCallControls').classList.add('hidden');
+                document.getElementById('customerCallInfo').innerHTML = '<div class="text-center py-8 text-gray-500"><span class="text-4xl mb-2 block">📞</span><p>No active call</p></div>';
+            }
+
+            showAlert('Call ended', 'info', currentRole === 'agent' ? 'agentAlert' : 'customerAlert');
+            log('✅ Cleanup complete', '#0f0', currentRole === 'agent' ? 'agentLogs' : 'customerLogs');
+        }
+
+        // Call History Functions
+        async function loadCallHistory() {
+            try {
+                const [statsRes, callsRes] = await Promise.all([
+                    fetch(`${SERVER_URL}/api/calls/stats`, {
+                        headers: { 'Authorization': `Bearer ${agentToken}` }
+                    }),
+                    fetch(`${SERVER_URL}/api/calls/all`, {
+                        headers: { 'Authorization': `Bearer ${agentToken}` }
+                    })
+                ]);
+
+                if (statsRes.ok) {
+                    const stats = await statsRes.json();
+                    document.getElementById('totalCalls').textContent = stats.totalCalls;
+                    document.getElementById('completedCalls').textContent = stats.completedCalls;
+                    document.getElementById('avgDuration').textContent = Math.round(stats.averageDuration) + 's';
+                }
+
+                if (callsRes.ok) {
+                    const data = await callsRes.json();
+                    displayCalls(data.calls);
+                }
+            } catch (error) {
+                console.error('Error loading call history:', error);
+                showAlert('Please login as an agent to view call history', 'error', 'agentAlert');
+            }
+        }
+
+        function displayCalls(calls) {
+            const callsList = document.getElementById('callsList');
+
+            if (calls.length === 0) {
+                callsList.innerHTML = '<p class="text-center text-gray-500 py-8">No calls yet</p>';
+                return;
+            }
+
+            callsList.innerHTML = calls.map(call => {
+                const startTime = new Date(call.startTime).toLocaleString();
+                const duration = call.duration ? `${call.duration}s` : 'N/A';
+                const statusColors = {
+                    completed: 'bg-green-100 text-green-700',
+                    ongoing: 'bg-yellow-100 text-yellow-700',
+                    missed: 'bg-red-100 text-red-700'
+                };
+                const statusClass = statusColors[call.status] || 'bg-gray-100 text-gray-700';
+
+                return `
+                    <div class="bg-gray-50 p-4 rounded-lg flex justify-between items-center hover:bg-gray-100 transition-colors">
+                        <div class="flex-1">
+                            <div class="font-semibold text-gray-800">${call.agent?.name || 'Unknown'} ↔ ${call.customer?.name || 'Unknown'}</div>
+                            <div class="text-sm text-gray-500 mt-1">
+                                📅 ${startTime} | ⏱️ ${duration} | 
+                                <span class="px-2 py-1 rounded-full text-xs font-semibold ${statusClass}">${call.status}</span>
+                            </div>
+                            ${call.recordingUrl ? '<div class="text-xs text-indigo-600 mt-1">🎙️ Recording available</div>' : ''}
+                        </div>
+                        <div>
+                            ${call.recordingUrl ? `<button onclick="downloadRecording('${call._id}')" class="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-semibold hover:bg-indigo-600 transition-colors">⬇ Download</button>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function downloadRecording(callId) {
+            try {
+                const response = await fetch(`${SERVER_URL}/api/calls/${callId}/recording`, {
+                    headers: { 'Authorization': `Bearer ${agentToken}` }
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `recording_${callId}.webm`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    showAlert('Recording downloaded successfully', 'success', 'agentAlert');
+                } else {
+                    showAlert('Recording not found', 'error', 'agentAlert');
+                }
+            } catch (error) {
+                showAlert('Error downloading recording: ' + error.message, 'error', 'agentAlert');
+            }
+        }
+
+        // Initialize
+        window.onload = () => {
+            console.log('✨ WebRTC Call Center Loaded');
+            console.log('🌐 Server URL:', SERVER_URL);
+            console.log('🎤 Audio features: Enhanced quality with mixing');
+        };
+    </script>
+</body>
+
+</html>
