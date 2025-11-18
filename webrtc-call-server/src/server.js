@@ -7,7 +7,7 @@ const connectDB = require('./config/database');
 const SignalingService = require('./services/signaling.service');
 const RecordingService = require('./services/recording.service');
 const transcriptionRoutes = require('./routes/transcription.routes');
-
+const analysisRoutes = require('./routes/analysis.routes');
 // Import routes
 const agentRoutes = require('./routes/agent.routes');
 const customerRoutes = require('./routes/customer.routes');
@@ -60,6 +60,7 @@ app.use('/api/agents', agentRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/calls', callRoutes);
 app.use('/api/transcriptions', transcriptionRoutes);
+app.use('/api/analysis', analysisRoutes);
 // Health check
 app.get('/health', (req, res) => {
   res.json({ 

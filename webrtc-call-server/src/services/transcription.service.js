@@ -3,11 +3,13 @@ const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 const Call = require('../models/Call');
+const LLMAnalysisService = require('./llm-analysis.service');
 
 class TranscriptionService {
     constructor() {
         // FastAPI server URL
         this.apiUrl = process.env.TRANSCRIPTION_API_URL || 'http://localhost:8000';
+        this.analysisService = new LLMAnalysisService();
     }
 
     /**
@@ -30,6 +32,10 @@ class TranscriptionService {
             await this.saveTranscription(callId, result);
 
             console.log(`✅ Transcription completed for call: ${callId}`);
+
+            console.log(`🤖 Triggering LLM analysis for call: ${callId}`);
+            this.analysisService.triggerAnalysis(callId);
+            
             return result;
 
         } catch (error) {
