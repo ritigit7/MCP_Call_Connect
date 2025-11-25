@@ -77,6 +77,23 @@
         .audio-bar:nth-child(5) {
             animation-delay: 0.4s;
         }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
     </style>
 </head>
 
@@ -104,18 +121,22 @@
         </header>
 
         <!-- Tabs -->
-        <div class="flex space-x-2 mb-6">
+        <div class="flex space-x-2 mb-6 overflow-x-auto">
             <button onclick="showTab('agent')"
-                class="tab-btn active px-6 py-3 bg-white rounded-lg font-semibold transition-all hover:shadow-lg">
+                class="tab-btn active px-6 py-3 bg-white rounded-lg font-semibold transition-all hover:shadow-lg whitespace-nowrap">
                 👨‍💼 Agent
             </button>
             <button onclick="showTab('customer')"
-                class="tab-btn px-6 py-3 bg-white/80 rounded-lg font-semibold transition-all hover:shadow-lg">
+                class="tab-btn px-6 py-3 bg-white/80 rounded-lg font-semibold transition-all hover:shadow-lg whitespace-nowrap">
                 👤 Customer
             </button>
             <button onclick="showTab('calls')"
-                class="tab-btn px-6 py-3 bg-white/80 rounded-lg font-semibold transition-all hover:shadow-lg">
+                class="tab-btn px-6 py-3 bg-white/80 rounded-lg font-semibold transition-all hover:shadow-lg whitespace-nowrap">
                 📊 Call History
+            </button>
+            <button onclick="showTab('superadmin')"
+                class="tab-btn px-6 py-3 bg-white/80 rounded-lg font-semibold transition-all hover:shadow-lg whitespace-nowrap">
+                🔐 SuperAdmin
             </button>
         </div>
 
@@ -148,7 +169,7 @@
                     </div>
 
                     <!-- Register Card -->
-                    <div class="bg-white rounded-xl shadow-lg p-8 slide-in" style="animation-delay: 0.1s">
+                    <!-- <div class="bg-white rounded-xl shadow-lg p-8 slide-in" style="animation-delay: 0.1s">
                         <h2 class="text-2xl font-bold text-gray-800 mb-6">Register Agent</h2>
                         <div class="space-y-4">
                             <div>
@@ -174,7 +195,7 @@
                                 Register
                             </button>
                         </div>
-                    </div>
+                    </div> -->
                 </div>
             </div>
 
@@ -421,7 +442,131 @@
                 </div>
             </div>
         </div>
+        <!-- SuperAdmin Tab -->
+        <div id="superadmin-tab" class="tab-content hidden">
+            <!-- SuperAdmin Auth -->
+            <div id="superadminAuth" class="max-w-2xl mx-auto space-y-6">
+                <div class="bg-white rounded-xl shadow-lg p-8">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">🔐 SuperAdmin Login</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                            <input type="email" id="superadminLoginEmail"
+                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none"
+                                placeholder="admin@example.com">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                            <input type="password" id="superadminLoginPassword"
+                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none"
+                                placeholder="••••••••">
+                        </div>
+                        <button onclick="superadminLogin()"
+                            class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-lg font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition-all">
+                            Login as SuperAdmin
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SuperAdmin Dashboard -->
+            <div id="superadminDashboard" class="hidden space-y-6">
+                <div id="superadminAlert"></div>
+
+                <!-- Header Actions -->
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold text-white">SuperAdmin Dashboard</h2>
+                        <p class="text-white/80">Welcome, <span id="superadminName">Admin</span></p>
+                    </div>
+                    <div class="space-x-3">
+                        <button onclick="showCreateAgentModal()"
+                            class="px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition-colors">
+                            ➕ Create Agent
+                        </button>
+                        <button onclick="superadminLogout()"
+                            class="px-6 py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 transition-colors">
+                            Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="grid md:grid-cols-4 gap-6">
+                    <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
+                        <div class="text-4xl font-bold mb-2" id="totalAgents">0</div>
+                        <div class="text-blue-100">Total Agents</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white">
+                        <div class="text-4xl font-bold mb-2" id="totalCallsAdmin">0</div>
+                        <div class="text-green-100">Total Calls</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
+                        <div class="text-4xl font-bold mb-2" id="avgAgentScore">0</div>
+                        <div class="text-purple-100">Avg Agent Score</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl shadow-lg p-6 text-white">
+                        <div class="text-4xl font-bold mb-2" id="avgCustomerSat">0</div>
+                        <div class="text-pink-100">Avg Customer Sat</div>
+                    </div>
+                </div>
+
+                <!-- Agents List -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold text-gray-800">Agent Management</h3>
+                        <div class="flex space-x-2">
+                            <input type="text" id="agentSearchInput" placeholder="Search agents..."
+                                class="px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 outline-none"
+                                onkeyup="searchAgents()">
+                            <button onclick="loadSuperadminDashboard()"
+                                class="px-4 py-2 bg-indigo-500 text-white rounded-lg font-semibold hover:bg-indigo-600 transition-colors">
+                                🔄 Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div id="agentsList" class="space-y-3"></div>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <!-- Create/Edit Agent Modal -->
+    <div id="agentModal" class="modal">
+        <div class="bg-white rounded-xl shadow-xl p-8 max-w-md w-full mx-4">
+            <h3 class="text-2xl font-bold text-gray-800 mb-6" id="modalTitle">Create Agent</h3>
+            <div class="space-y-4">
+                <input type="hidden" id="editAgentId">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Name</label>
+                    <input type="text" id="modalAgentName"
+                        class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                    <input type="email" id="modalAgentEmail"
+                        class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 outline-none">
+                </div>
+                <div id="passwordField">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                    <input type="password" id="modalAgentPassword"
+                        class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 outline-none"
+                        placeholder="Min 6 characters">
+                </div>
+                <div class="flex space-x-3 mt-6">
+                    <button onclick="saveAgent()"
+                        class="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition-colors">
+                        Save
+                    </button>
+                    <button onclick="closeAgentModal()"
+                        class="flex-1 bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <script>
         const SERVER_URL = 'https://hsbd23p5-3000.inc1.devtunnels.ms';
@@ -429,6 +574,7 @@
         let currentUser = null;
         let currentRole = null;
         let agentToken = null;
+        let superadminToken = null;
         let currentCallId = null;
         let peerConnection = null;
         let localStream = null;
@@ -1287,6 +1433,317 @@
                 }
             } catch (error) {
                 showAlert('Error downloading recording: ' + error.message, 'error', 'agentAlert');
+            }
+        }
+        async function superadminLogin() {
+            const email = document.getElementById('superadminLoginEmail').value;
+            const password = document.getElementById('superadminLoginPassword').value;
+
+            if (!email || !password) {
+                alert('Please fill all fields');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${SERVER_URL}/api/superadmin/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    superadminToken = data.token;
+                    currentUser = data.superAdmin;
+                    currentRole = 'superadmin';
+                    showSuperadminDashboard();
+                    await loadSuperadminDashboard();
+                } else {
+                    alert(data.error || 'Login failed');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        function showSuperadminDashboard() {
+            document.getElementById('superadminAuth').classList.add('hidden');
+            document.getElementById('superadminDashboard').classList.remove('hidden');
+            document.getElementById('superadminName').textContent = currentUser.name;
+        }
+
+        function superadminLogout() {
+            currentUser = null;
+            superadminToken = null;
+            currentRole = null;
+            document.getElementById('superadminAuth').classList.remove('hidden');
+            document.getElementById('superadminDashboard').classList.add('hidden');
+            document.getElementById('superadminLoginEmail').value = '';
+            document.getElementById('superadminLoginPassword').value = '';
+        }
+
+        async function loadSuperadminDashboard() {
+            try {
+                // Load statistics
+                const statsResponse = await fetch(`${SERVER_URL}/api/superadmin/dashboard/stats`, {
+                    headers: { 'Authorization': `Bearer ${superadminToken}` }
+                });
+
+                if (statsResponse.ok) {
+                    const stats = await statsResponse.json();
+                    document.getElementById('totalAgents').textContent = stats.agents.total;
+                    document.getElementById('totalCallsAdmin').textContent = stats.calls.total;
+                    document.getElementById('avgAgentScore').textContent = (stats.averages.avgAgentScore || 0).toFixed(1);
+                    document.getElementById('avgCustomerSat').textContent = ((stats.averages.avgCustomerSatisfaction || 0) * 10).toFixed(1);
+                }
+
+                // Load agents list
+                await loadAgentsList();
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                showAlert('Error loading dashboard data', 'error', 'superadminAlert');
+            }
+        }
+
+        async function loadAgentsList(search = '') {
+            try {
+                const url = search
+                    ? `${SERVER_URL}/api/superadmin/agents?search=${search}`
+                    : `${SERVER_URL}/api/superadmin/agents`;
+
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${superadminToken}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayAgentsList(data.agents);
+                }
+            } catch (error) {
+                console.error('Error loading agents:', error);
+            }
+        }
+
+        function displayAgentsList(agents) {
+            const agentsList = document.getElementById('agentsList');
+
+            if (agents.length === 0) {
+                agentsList.innerHTML = '<p class="text-center text-gray-500 py-8">No agents found</p>';
+                return;
+            }
+
+            agentsList.innerHTML = agents.map(agent => {
+                const statusColors = {
+                    online: 'bg-green-100 text-green-700',
+                    offline: 'bg-gray-100 text-gray-700',
+                    busy: 'bg-yellow-100 text-yellow-700'
+                };
+                const statusClass = statusColors[agent.status] || 'bg-gray-100 text-gray-700';
+                const activeClass = agent.isActive ? 'bg-green-50' : 'bg-red-50';
+
+                return `
+                    <div class="${activeClass} p-4 rounded-lg border-2 border-gray-200">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <div class="flex items-center space-x-3">
+                                    <h4 class="font-bold text-gray-800">${agent.name}</h4>
+                                    <span class="px-2 py-1 rounded-full text-xs font-semibold ${statusClass}">${agent.status}</span>
+                                    ${!agent.isActive ? '<span class="px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">Inactive</span>' : ''}
+                                </div>
+                                <p class="text-sm text-gray-600 mt-1">${agent.email}</p>
+                                <div class="grid grid-cols-4 gap-4 mt-3 text-sm">
+                                    <div><span class="text-gray-500">Calls:</span> <strong>${agent.totalCalls || 0}</strong></div>
+                                    <div><span class="text-gray-500">Completed:</span> <strong>${agent.completedCalls || 0}</strong></div>
+                                    <div><span class="text-gray-500">Avg Score:</span> <strong>${(agent.avgPerformanceScore || 0).toFixed(1)}</strong></div>
+                                    <div><span class="text-gray-500">Avg Duration:</span> <strong>${Math.round(agent.avgCallDuration || 0)}s</strong></div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col space-y-2">
+                                <button onclick="showEditAgentModal('${agent._id}')"
+                                    class="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors">
+                                    ✏️ Edit
+                                </button>
+                                <button onclick="toggleAgentStatus('${agent._id}', ${agent.isActive})"
+                                    class="px-4 py-2 ${agent.isActive ? 'bg-orange-500' : 'bg-green-500'} text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-colors">
+                                    ${agent.isActive ? '🔒 Deactivate' : '✅ Activate'}
+                                </button>
+                                ${agent.isActive ? `
+                                <button onclick="deleteAgent('${agent._id}')"
+                                    class="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600 transition-colors">
+                                    🗑️ Delete
+                                </button>
+                                ` : `
+                                <button onclick="restoreAgent('${agent._id}')"
+                                    class="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-semibold hover:bg-green-600 transition-colors">
+                                    ♻️ Restore
+                                </button>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function searchAgents() {
+            const search = document.getElementById('agentSearchInput').value;
+            loadAgentsList(search);
+        }
+
+        function showCreateAgentModal() {
+            document.getElementById('modalTitle').textContent = 'Create Agent';
+            document.getElementById('editAgentId').value = '';
+            document.getElementById('modalAgentName').value = '';
+            document.getElementById('modalAgentEmail').value = '';
+            document.getElementById('modalAgentPassword').value = '';
+            document.getElementById('passwordField').style.display = 'block';
+            document.getElementById('agentModal').classList.add('active');
+        }
+
+        async function showEditAgentModal(agentId) {
+            try {
+                const response = await fetch(`${SERVER_URL}/api/superadmin/agents/${agentId}`, {
+                    headers: { 'Authorization': `Bearer ${superadminToken}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('modalTitle').textContent = 'Edit Agent';
+                    document.getElementById('editAgentId').value = agentId;
+                    document.getElementById('modalAgentName').value = data.agent.name;
+                    document.getElementById('modalAgentEmail').value = data.agent.email;
+                    document.getElementById('passwordField').style.display = 'none';
+                    document.getElementById('agentModal').classList.add('active');
+                }
+            } catch (error) {
+                alert('Error loading agent details: ' + error.message);
+            }
+        }
+
+        function closeAgentModal() {
+            document.getElementById('agentModal').classList.remove('active');
+        }
+
+        async function saveAgent() {
+            const agentId = document.getElementById('editAgentId').value;
+            const name = document.getElementById('modalAgentName').value;
+            const email = document.getElementById('modalAgentEmail').value;
+            const password = document.getElementById('modalAgentPassword').value;
+
+            if (!name || !email) {
+                alert('Please fill all required fields');
+                return;
+            }
+
+            if (!agentId && (!password || password.length < 6)) {
+                alert('Password must be at least 6 characters');
+                return;
+            }
+
+            try {
+                let response;
+                if (agentId) {
+                    // Update existing agent
+                    response = await fetch(`${SERVER_URL}/api/superadmin/agents/${agentId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${superadminToken}`
+                        },
+                        body: JSON.stringify({ name, email })
+                    });
+                } else {
+                    // Create new agent
+                    response = await fetch(`${SERVER_URL}/api/superadmin/agents`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${superadminToken}`
+                        },
+                        body: JSON.stringify({ name, email, password })
+                    });
+                }
+
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert(agentId ? 'Agent updated successfully' : 'Agent created successfully', 'success', 'superadminAlert');
+                    closeAgentModal();
+                    await loadSuperadminDashboard();
+                } else {
+                    alert(data.error || 'Operation failed');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function deleteAgent(agentId) {
+            if (!confirm('Are you sure you want to delete this agent? This will deactivate their account.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${SERVER_URL}/api/superadmin/agents/${agentId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${superadminToken}` }
+                });
+
+                if (response.ok) {
+                    showAlert('Agent deleted successfully', 'success', 'superadminAlert');
+                    await loadSuperadminDashboard();
+                } else {
+                    const data = await response.json();
+                    alert(data.error || 'Delete failed');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function restoreAgent(agentId) {
+            if (!confirm('Are you sure you want to restore this agent?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${SERVER_URL}/api/superadmin/agents/${agentId}/restore`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${superadminToken}` }
+                });
+
+                if (response.ok) {
+                    showAlert('Agent restored successfully', 'success', 'superadminAlert');
+                    await loadSuperadminDashboard();
+                } else {
+                    const data = await response.json();
+                    alert(data.error || 'Restore failed');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function toggleAgentStatus(agentId, currentStatus) {
+            const action = currentStatus ? 'deactivate' : 'activate';
+            if (!confirm(`Are you sure you want to ${action} this agent?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${SERVER_URL}/api/superadmin/agents/${agentId}/toggle-status`, {
+                    method: 'PATCH',
+                    headers: { 'Authorization': `Bearer ${superadminToken}` }
+                });
+
+                if (response.ok) {
+                    showAlert(`Agent ${action}d successfully`, 'success', 'superadminAlert');
+                    await loadSuperadminDashboard();
+                } else {
+                    const data = await response.json();
+                    alert(data.error || 'Operation failed');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
             }
         }
 

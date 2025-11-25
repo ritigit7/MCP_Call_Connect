@@ -8,6 +8,7 @@ const SignalingService = require('./services/signaling.service');
 const RecordingService = require('./services/recording.service');
 const transcriptionRoutes = require('./routes/transcription.routes');
 const analysisRoutes = require('./routes/analysis.routes');
+const superAdminRoutes = require('./routes/superadmin.routes');
 // Import routes
 const agentRoutes = require('./routes/agent.routes');
 const customerRoutes = require('./routes/customer.routes');
@@ -61,6 +62,7 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/calls', callRoutes);
 app.use('/api/transcriptions', transcriptionRoutes);
 app.use('/api/analysis', analysisRoutes);
+app.use('/api/superadmin', superAdminRoutes);
 // Health check
 app.get('/health', (req, res) => {
   res.json({ 

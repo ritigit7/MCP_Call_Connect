@@ -31,6 +31,40 @@ const agentSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  deletedAt: {
+    type: Date,
+    default: null
+  },
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'SuperAdmin',
+    default: null
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'SuperAdmin',
+    default: null
+  },
+  updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'SuperAdmin',
+    default: null
+  },
+  lastPasswordChange: {
+    type: Date
+  },
+  totalCalls: {
+    type: Number,
+    default: 0
+  },
+  averageRating: {
+    type: Number,
+    default: 0
   }
 });
 
@@ -45,5 +79,7 @@ agentSchema.pre('save', async function (next) {
 agentSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
+
+agentSchema.index({ isActive: 1, deletedAt: 1 });
 
 module.exports = mongoose.model('Agent', agentSchema);
