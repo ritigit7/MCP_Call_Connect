@@ -35,7 +35,7 @@ class TranscriptionService {
 
             console.log(`🤖 Triggering LLM analysis for call: ${callId}`);
             this.analysisService.triggerAnalysis(callId);
-            
+
             return result;
 
         } catch (error) {

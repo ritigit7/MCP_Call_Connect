@@ -3,107 +3,107 @@ const CallAnalysis = require('../models/CallAnalysis');
 const Call = require('../models/Call');
 
 class LLMAnalysisService {
-    constructor() {
-        this.openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY
-        });
-        this.model = process.env.LLM_MODEL || 'gpt-4-turbo-preview';
+  constructor() {
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
+    this.model = process.env.LLM_MODEL || 'gpt-4-turbo-preview';
+  }
+
+  /**
+   * Analyze a call transcript
+   */
+  async analyzeCall(callId) {
+    const startTime = Date.now();
+
+    try {
+      console.log(`🤖 Starting LLM analysis for call: ${callId}`);
+
+      // Get call with transcription
+      const call = await Call.findOne({ callId })
+        .populate('agent', 'name email')
+        .populate('customer', 'name email')
+        .lean();
+
+      if (!call) {
+        throw new Error('Call not found');
+      }
+
+      if (!call.transcription?.conversation?.length) {
+        throw new Error('No transcription available for this call');
+      }
+
+      // Format transcript
+      const transcript = this.formatTranscript(call.transcription.conversation);
+
+      // Get analysis from LLM
+      const analysis = await this.callLLM(transcript, call);
+
+      // Save to database
+      const savedAnalysis = await this.saveAnalysis(callId, call._id, analysis);
+
+      const processingTime = Date.now() - startTime;
+      console.log(`✅ Analysis completed in ${processingTime}ms`);
+
+      return savedAnalysis;
+
+    } catch (error) {
+      console.error(`❌ Analysis failed for call ${callId}:`, error.message);
+      throw error;
     }
+  }
 
-    /**
-     * Analyze a call transcript
-     */
-    async analyzeCall(callId) {
-        const startTime = Date.now();
+  /**
+   * Format transcript for LLM
+   */
+  formatTranscript(conversation) {
+    return conversation.map(turn => {
+      const timestamp = this.formatTime(turn.start);
+      return `[${timestamp}] ${turn.speaker}: ${turn.text}`;
+    }).join('\n');
+  }
 
-        try {
-            console.log(`🤖 Starting LLM analysis for call: ${callId}`);
+  formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
 
-            // Get call with transcription
-            const call = await Call.findOne({ callId })
-                .populate('agent', 'name email')
-                .populate('customer', 'name email')
-                .lean();
+  /**
+   * Call OpenAI API
+   */
+  async callLLM(transcript, callMetadata) {
+    const prompt = this.buildPrompt(transcript, callMetadata);
 
-            if (!call) {
-                throw new Error('Call not found');
-            }
+    console.log('📡 Calling OpenAI API...');
 
-            if (!call.transcription?.conversation?.length) {
-                throw new Error('No transcription available for this call');
-            }
-
-            // Format transcript
-            const transcript = this.formatTranscript(call.transcription.conversation);
-
-            // Get analysis from LLM
-            const analysis = await this.callLLM(transcript, call);
-
-            // Save to database
-            const savedAnalysis = await this.saveAnalysis(callId, call._id, analysis);
-
-            const processingTime = Date.now() - startTime;
-            console.log(`✅ Analysis completed in ${processingTime}ms`);
-
-            return savedAnalysis;
-
-        } catch (error) {
-            console.error(`❌ Analysis failed for call ${callId}:`, error.message);
-            throw error;
+    const response = await this.openai.chat.completions.create({
+      model: this.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert call center analyst specializing in customer service quality, sentiment analysis, and performance evaluation. Analyze call transcripts thoroughly and provide structured insights in JSON format.'
+        },
+        {
+          role: 'user',
+          content: prompt
         }
-    }
+      ],
+      temperature: 0.3,
+      response_format: { type: "json_object" }
+    });
 
-    /**
-     * Format transcript for LLM
-     */
-    formatTranscript(conversation) {
-        return conversation.map(turn => {
-            const timestamp = this.formatTime(turn.start);
-            return `[${timestamp}] ${turn.speaker}: ${turn.text}`;
-        }).join('\n');
-    }
+    const analysisText = response.choices[0].message.content;
+    const analysis = JSON.parse(analysisText);
 
-    formatTime(seconds) {
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60);
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    }
+    return analysis;
+  }
 
-    /**
-     * Call OpenAI API
-     */
-    async callLLM(transcript, callMetadata) {
-        const prompt = this.buildPrompt(transcript, callMetadata);
-
-        console.log('📡 Calling OpenAI API...');
-
-        const response = await this.openai.chat.completions.create({
-            model: this.model,
-            messages: [
-                {
-                    role: 'system',
-                    content: 'You are an expert call center analyst specializing in customer service quality, sentiment analysis, and performance evaluation. Analyze call transcripts thoroughly and provide structured insights in JSON format.'
-                },
-                {
-                    role: 'user',
-                    content: prompt
-                }
-            ],
-            temperature: 0.3,
-            response_format: { type: "json_object" }
-        });
-
-        const analysisText = response.choices[0].message.content;
-        const analysis = JSON.parse(analysisText);
-
-        return analysis;
-    }
-
-    /**
-     * Build analysis prompt
-     */
-    buildPrompt(transcript, callMetadata) {
-        return `Analyze this customer service call transcript and provide a comprehensive analysis in JSON format.
+  /**
+   * Build analysis prompt
+   */
+  buildPrompt(transcript, callMetadata) {
+    return `Analyze this customer service call transcript and provide a comprehensive analysis in JSON format.
 
 Call Information:
 - Agent: ${callMetadata.agent?.name || 'Unknown'}
@@ -224,109 +224,109 @@ Provide analysis in the following JSON structure:
 }
 
 Ensure all fields are filled with meaningful analysis based on the transcript. Use null for truly unavailable information.`;
+  }
+
+  /**
+   * Save analysis to database
+   */
+  async saveAnalysis(callId, callObjectId, analysis) {
+    // Check if analysis already exists
+    let existingAnalysis = await CallAnalysis.findOne({ callId });
+
+    const analysisData = {
+      callId,
+      call: callObjectId,
+      ...analysis,
+      analysisMetadata: {
+        analyzedAt: new Date(),
+        llmModel: this.model,
+        processingTime: 0,
+        confidence: 0.85,
+        version: '1.0'
+      }
+    };
+
+    if (existingAnalysis) {
+      // Update existing
+      existingAnalysis = await CallAnalysis.findOneAndUpdate(
+        { callId },
+        analysisData,
+        { new: true }
+      );
+      return existingAnalysis;
+    } else {
+      // Create new
+      const newAnalysis = new CallAnalysis(analysisData);
+      return await newAnalysis.save();
+    }
+  }
+
+  /**
+   * Get analysis for a call
+   */
+  async getAnalysis(callId) {
+    const analysis = await CallAnalysis.findOne({ callId })
+      .populate('call')
+      .lean();
+
+    if (!analysis) {
+      throw new Error('Analysis not found');
     }
 
-    /**
-     * Save analysis to database
-     */
-    async saveAnalysis(callId, callObjectId, analysis) {
-        // Check if analysis already exists
-        let existingAnalysis = await CallAnalysis.findOne({ callId });
+    return analysis;
+  }
 
-        const analysisData = {
-            callId,
-            call: callObjectId,
-            ...analysis,
-            analysisMetadata: {
-                analyzedAt: new Date(),
-                llmModel: this.model,
-                processingTime: 0,
-                confidence: 0.85,
-                version: '1.0'
-            }
-        };
+  /**
+   * Trigger analysis in background
+   */
+  async triggerAnalysis(callId) {
+    setImmediate(async () => {
+      try {
+        await this.analyzeCall(callId);
+      } catch (error) {
+        console.error(`Background analysis failed: ${error.message}`);
+      }
+    });
+  }
 
-        if (existingAnalysis) {
-            // Update existing
-            existingAnalysis = await CallAnalysis.findOneAndUpdate(
-                { callId },
-                analysisData,
-                { new: true }
-            );
-            return existingAnalysis;
-        } else {
-            // Create new
-            const newAnalysis = new CallAnalysis(analysisData);
-            return await newAnalysis.save();
+  /**
+   * Get analytics summary for multiple calls
+   */
+  async getAnalyticsSummary(filters = {}) {
+    const pipeline = [];
+
+    // Add filters if provided
+    if (filters.dateFrom) {
+      pipeline.push({
+        $match: {
+          'analysisMetadata.analyzedAt': { $gte: new Date(filters.dateFrom) }
         }
+      });
     }
 
-    /**
-     * Get analysis for a call
-     */
-    async getAnalysis(callId) {
-        const analysis = await CallAnalysis.findOne({ callId })
-            .populate('call')
-            .lean();
-
-        if (!analysis) {
-            throw new Error('Analysis not found');
+    // Aggregate statistics
+    pipeline.push({
+      $group: {
+        _id: null,
+        totalCalls: { $sum: 1 },
+        avgAgentScore: { $avg: '$agentPerformance.scores.overall' },
+        avgCustomerSatisfaction: { $avg: '$sentiment.scores.customer' },
+        resolvedCount: {
+          $sum: {
+            $cond: [{ $eq: ['$issues.status', 'resolved'] }, 1, 0]
+          }
+        },
+        escalatedCount: {
+          $sum: {
+            $cond: [{ $eq: ['$issues.status', 'escalated'] }, 1, 0]
+          }
         }
+      }
+    });
 
-        return analysis;
-    }
-
-    /**
-     * Trigger analysis in background
-     */
-    async triggerAnalysis(callId) {
-        setImmediate(async () => {
-            try {
-                await this.analyzeCall(callId);
-            } catch (error) {
-                console.error(`Background analysis failed: ${error.message}`);
-            }
-        });
-    }
-
-    /**
-     * Get analytics summary for multiple calls
-     */
-    async getAnalyticsSummary(filters = {}) {
-        const pipeline = [];
-
-        // Add filters if provided
-        if (filters.dateFrom) {
-            pipeline.push({
-                $match: {
-                    'analysisMetadata.analyzedAt': { $gte: new Date(filters.dateFrom) }
-                }
-            });
-        }
-
-        // Aggregate statistics
-        pipeline.push({
-            $group: {
-                _id: null,
-                totalCalls: { $sum: 1 },
-                avgAgentScore: { $avg: '$agentPerformance.scores.overall' },
-                avgCustomerSatisfaction: { $avg: '$sentiment.scores.customer' },
-                resolvedCount: {
-                    $sum: {
-                        $cond: [{ $eq: ['$issues.status', 'resolved'] }, 1, 0]
-                    }
-                },
-                escalatedCount: {
-                    $sum: {
-                        $cond: [{ $eq: ['$issues.status', 'escalated'] }, 1, 0]
-                    }
-                }
-            }
-        });
-
-        const result = await CallAnalysis.aggregate(pipeline);
-        return result[0] || {};
-    }
+    const result = await CallAnalysis.aggregate(pipeline);
+    return result[0] || {};
+  }
 }
 
 module.exports = LLMAnalysisService;

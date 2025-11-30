@@ -14,18 +14,22 @@ const generateToken = (id) => {
 
 // Register SuperAdmin (first time setup)
 exports.register = async (req, res) => {
+    console.log('Registering new SuperAdmin...');
     try {
         const { name, email, password } = req.body;
+        console.log('Request body:', { name, email });
 
         // Check if SuperAdmin already exists
         const existingSuperAdmin = await SuperAdmin.findOne({ email });
         if (existingSuperAdmin) {
+            console.log('SuperAdmin already exists:', email);
             return res.status(400).json({ error: 'SuperAdmin already exists' });
         }
 
         // Create SuperAdmin
         const superAdmin = new SuperAdmin({ name, email, password });
         await superAdmin.save();
+        console.log('SuperAdmin created successfully:', superAdmin._id);
 
         const token = generateToken(superAdmin._id);
 
@@ -39,27 +43,34 @@ exports.register = async (req, res) => {
             },
             token
         });
+        console.log('SuperAdmin registered successfully:', superAdmin.email);
     } catch (error) {
+        console.error('Error in SuperAdmin registration:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
 
 // Login SuperAdmin
 exports.login = async (req, res) => {
+    console.log('SuperAdmin login attempt...');
     try {
         const { email, password } = req.body;
+        console.log('Login credentials:', { email });
 
         const superAdmin = await SuperAdmin.findOne({ email });
         if (!superAdmin) {
+            console.log('Invalid credentials - SuperAdmin not found:', email);
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
         if (!superAdmin.isActive) {
+            console.log('Login failed - SuperAdmin account is deactivated:', email);
             return res.status(403).json({ error: 'Account is deactivated' });
         }
 
         const isMatch = await superAdmin.comparePassword(password);
         if (!isMatch) {
+            console.log('Invalid credentials - password mismatch for SuperAdmin:', email);
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
@@ -79,13 +90,16 @@ exports.login = async (req, res) => {
             },
             token
         });
+        console.log('SuperAdmin logged in successfully:', superAdmin.email);
     } catch (error) {
+        console.error('Error in SuperAdmin login:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
 
 // Get SuperAdmin profile
 exports.getProfile = async (req, res) => {
+    console.log('Fetching profile for SuperAdmin:', req.superAdmin._id);
     try {
         res.json({
             superAdmin: {
@@ -96,7 +110,9 @@ exports.getProfile = async (req, res) => {
                 lastLogin: req.superAdmin.lastLogin
             }
         });
+        console.log('SuperAdmin profile fetched successfully for:', req.superAdmin.email);
     } catch (error) {
+        console.error('Error fetching SuperAdmin profile:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
@@ -105,12 +121,15 @@ exports.getProfile = async (req, res) => {
 
 // Create new agent
 exports.createAgent = async (req, res) => {
+    console.log('SuperAdmin creating new agent...');
     try {
         const { name, email, password } = req.body;
+        console.log('Request body:', { name, email });
 
         // Check if agent exists
         const existingAgent = await Agent.findOne({ email });
         if (existingAgent) {
+            console.log('Agent already exists:', email);
             return res.status(400).json({ error: 'Agent already exists' });
         }
 
@@ -122,6 +141,7 @@ exports.createAgent = async (req, res) => {
             createdBy: req.superAdmin._id
         });
         await agent.save();
+        console.log('Agent created successfully by SuperAdmin:', req.superAdmin._id, 'New agent ID:', agent._id);
 
         res.status(201).json({
             message: 'Agent created successfully',
@@ -134,13 +154,16 @@ exports.createAgent = async (req, res) => {
                 createdAt: agent.createdAt
             }
         });
+        console.log('Agent creation successful:', agent.email);
     } catch (error) {
+        console.error('Error creating agent:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
 
 // Get all agents (including deleted)
 exports.getAllAgents = async (req, res) => {
+    console.log('Fetching all agents...');
     try {
         const {
             page = 1,
@@ -152,6 +175,7 @@ exports.getAllAgents = async (req, res) => {
             sortOrder = 'desc'
         } = req.query;
 
+        console.log('Query params:', req.query);
         const skip = (page - 1) * limit;
         const query = {};
 
@@ -241,13 +265,16 @@ exports.getAllAgents = async (req, res) => {
                 pages: Math.ceil(total / limit)
             }
         });
+        console.log('All agents fetched successfully.');
     } catch (error) {
+        console.error('Error fetching all agents:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
 
 // Get single agent with detailed stats
 exports.getAgentById = async (req, res) => {
+    console.log('Fetching agent by ID:', req.params.id);
     try {
         const { id } = req.params;
 
@@ -258,6 +285,7 @@ exports.getAgentById = async (req, res) => {
             .populate('deletedBy', 'name email');
 
         if (!agent) {
+            console.log('Agent not found for ID:', id);
             return res.status(404).json({ error: 'Agent not found' });
         }
 
@@ -330,13 +358,16 @@ exports.getAgentById = async (req, res) => {
             },
             recentCalls
         });
+        console.log('Successfully fetched agent by ID:', id);
     } catch (error) {
+        console.error('Error fetching agent by ID:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
 
 // Update agent
 exports.updateAgent = async (req, res) => {
+    console.log('Updating agent:', req.params.id);
     try {
         const { id } = req.params;
         const updates = req.body;
@@ -347,8 +378,10 @@ exports.updateAgent = async (req, res) => {
         delete updates.deletedAt;
         delete updates.deletedBy;
 
+        console.log('Updates:', updates);
         const agent = await Agent.findById(id);
         if (!agent) {
+            console.log('Agent not found for update:', id);
             return res.status(404).json({ error: 'Agent not found' });
         }
 
@@ -367,23 +400,28 @@ exports.updateAgent = async (req, res) => {
                 isActive: agent.isActive
             }
         });
+        console.log('Agent updated successfully:', id);
     } catch (error) {
+        console.error('Error updating agent:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
 
 // Update agent password
 exports.updateAgentPassword = async (req, res) => {
+    console.log('Updating password for agent:', req.params.id);
     try {
         const { id } = req.params;
         const { newPassword } = req.body;
 
         if (!newPassword || newPassword.length < 6) {
+            console.log('Invalid password provided for agent:', id);
             return res.status(400).json({ error: 'Password must be at least 6 characters' });
         }
 
         const agent = await Agent.findById(id);
         if (!agent) {
+            console.log('Agent not found for password update:', id);
             return res.status(404).json({ error: 'Agent not found' });
         }
 
@@ -393,22 +431,27 @@ exports.updateAgentPassword = async (req, res) => {
         await agent.save();
 
         res.json({ message: 'Password updated successfully' });
+        console.log('Password updated successfully for agent:', id);
     } catch (error) {
+        console.error('Error updating agent password:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
 
 // Soft delete agent
 exports.deleteAgent = async (req, res) => {
+    console.log('Soft deleting agent:', req.params.id);
     try {
         const { id } = req.params;
 
         const agent = await Agent.findById(id);
         if (!agent) {
+            console.log('Agent not found for deletion:', id);
             return res.status(404).json({ error: 'Agent not found' });
         }
 
         if (!agent.isActive) {
+            console.log('Attempted to delete an already deleted agent:', id);
             return res.status(400).json({ error: 'Agent is already deleted' });
         }
 
@@ -447,24 +490,29 @@ exports.restoreAgent = async (req, res) => {
         await agent.save();
 
         res.json({ message: 'Agent restored successfully' });
+        console.log('Agent restored successfully:', id);
     } catch (error) {
+        console.error('Error restoring agent:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
 
 // Permanently delete agent
 exports.permanentDeleteAgent = async (req, res) => {
+    console.log('Permanently deleting agent:', req.params.id);
     try {
         const { id } = req.params;
 
         const agent = await Agent.findById(id);
         if (!agent) {
+            console.log('Agent not found for permanent deletion:', id);
             return res.status(404).json({ error: 'Agent not found' });
         }
 
         // Check if agent has calls
         const callCount = await Call.countDocuments({ agent: id });
         if (callCount > 0) {
+            console.log('Cannot permanently delete agent with existing calls:', id);
             return res.status(400).json({
                 error: 'Cannot permanently delete agent with existing calls. Use soft delete instead.',
                 callCount
@@ -502,7 +550,9 @@ exports.toggleAgentStatus = async (req, res) => {
             message: `Agent ${agent.isActive ? 'activated' : 'deactivated'} successfully`,
             isActive: agent.isActive
         });
+        console.log(`Agent ${id} status toggled to: ${agent.isActive}`);
     } catch (error) {
+        console.error('Error toggling agent status:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
@@ -511,6 +561,7 @@ exports.toggleAgentStatus = async (req, res) => {
 
 // Get dashboard statistics
 exports.getDashboardStats = async (req, res) => {
+    console.log('Fetching dashboard statistics...');
     try {
         // Total agents
         const totalAgents = await Agent.countDocuments({ isActive: true });
@@ -667,7 +718,9 @@ exports.getAgentComparison = async (req, res) => {
         ]);
 
         res.json({ comparison });
+        console.log('Agent performance comparison fetched successfully.');
     } catch (error) {
+        console.error('Error fetching agent comparison:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
