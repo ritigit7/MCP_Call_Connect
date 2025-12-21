@@ -46,13 +46,22 @@ class SignalingService {
       socket.on('call:initiate', async (data) => {
         try {
           const { customerId, agentId } = data;
+          console.log(`📞 Call initiate request - customerId: ${customerId}, agentId: ${agentId}`);
 
           const agent = await Agent.findById(agentId);
           const customer = await Customer.findById(customerId);
 
-          if (!agent || !customer) {
-            return socket.emit('error', { message: 'Agent or Customer not found' });
+          if (!agent) {
+            console.log(`❌ Agent not found with ID: ${agentId}`);
+            return socket.emit('error', { message: `Agent not found with ID: ${agentId}` });
           }
+          if (!customer) {
+            console.log(`❌ Customer not found with ID: ${customerId}`);
+            return socket.emit('error', { message: `Customer not found with ID: ${customerId}` });
+          }
+
+          console.log(`✅ Found agent: ${agent.name} (status: ${agent.status}, socketId: ${agent.socketId})`);
+          console.log(`✅ Found customer: ${customer.name}`);
 
           if (agent.status !== 'online') {
             return socket.emit('error', { message: 'Agent is not available' });
@@ -79,6 +88,7 @@ class SignalingService {
           await Agent.findByIdAndUpdate(agentId, { status: 'busy' });
 
           // Notify agent about incoming call
+          console.log(`📤 Sending call:incoming to agent socketId: ${agent.socketId}`);
           this.io.to(agent.socketId).emit('call:incoming', {
             callId,
             customer: {

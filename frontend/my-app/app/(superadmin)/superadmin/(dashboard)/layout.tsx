@@ -26,8 +26,21 @@ export default function SuperAdminLayout({
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [adminName, setAdminName] = useState("SuperAdmin");
     const [showProfileMenu, setShowProfileMenu] = useState(false);
+    const [currentTime, setCurrentTime] = useState("");
     const router = useRouter();
     const pathname = usePathname();
+
+    useEffect(() => {
+        // Set initial time on client
+        setCurrentTime(new Date().toLocaleTimeString());
+        
+        // Update time every second
+        const interval = setInterval(() => {
+            setCurrentTime(new Date().toLocaleTimeString());
+        }, 1000);
+        
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         // Load superadmin data from localStorage
@@ -95,33 +108,6 @@ export default function SuperAdminLayout({
                         </button>
                     </div>
 
-                    {/* Admin Info Section */}
-                    <div className="px-4 py-6 border-b border-gray-800">
-                        {sidebarOpen ? (
-                            <div className="flex items-center space-x-3">
-                                <div className="relative">
-                                    <div className="w-14 h-14 bg-gradient-to-r from-red-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
-                                        <Shield className="w-7 h-7" />
-                                    </div>
-                                    <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-950" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold truncate">{adminName}</p>
-                                    <p className="text-xs text-red-400">System Administrator</p>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex justify-center">
-                                <div className="relative">
-                                    <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-purple-600 rounded-full flex items-center justify-center">
-                                        <Shield className="w-6 h-6" />
-                                    </div>
-                                    <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-gray-950" />
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
                     {/* Navigation */}
                     <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto">
                         {navigation.map((item) => {
@@ -144,16 +130,6 @@ export default function SuperAdminLayout({
                             );
                         })}
                     </nav>
-
-                    {/* Warning Section */}
-                    {sidebarOpen && (
-                        <div className="px-4 py-4 mx-3 mb-4 bg-orange-500/10 border border-orange-500/30 rounded-lg">
-                            <p className="text-xs text-orange-400 flex items-center space-x-2">
-                                <span>⚠️</span>
-                                <span>All actions are logged</span>
-                            </p>
-                        </div>
-                    )}
 
                     {/* Logout Button */}
                     <div className="px-3 py-6 border-t border-gray-800">
@@ -192,12 +168,12 @@ export default function SuperAdminLayout({
                     {/* Page Title */}
                     <div className="flex-1">
                         <h2 className="text-xl font-bold text-white">
-                            {pathname === "/superadmin/dashboard" && "System Overview"}
+                            {pathname === "/superadmin/dashboard" && "Overview"}
                             {pathname === "/superadmin/agents" && "Agent Management"}
-                            {pathname === "/superadmin/analytics" && "System Analytics"}
+                            {pathname === "/superadmin/analytics" && "Analytics"}
                         </h2>
                         <p className="text-sm text-gray-400">
-                            Last updated: {new Date().toLocaleTimeString()}
+                            Last updated: {currentTime || "Loading..."}
                         </p>
                     </div>
 

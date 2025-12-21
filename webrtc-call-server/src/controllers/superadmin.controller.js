@@ -291,7 +291,7 @@ exports.getAgentById = async (req, res) => {
 
         // Get call statistics
         const callStats = await Call.aggregate([
-            { $match: { agent: mongoose.Types.ObjectId(id) } },
+            { $match: { agent: new mongoose.Types.ObjectId(id) } },
             {
                 $group: {
                     _id: null,
@@ -316,7 +316,7 @@ exports.getAgentById = async (req, res) => {
                 }
             },
             { $unwind: '$callData' },
-            { $match: { 'callData.agent': mongoose.Types.ObjectId(id) } },
+            { $match: { 'callData.agent': new mongoose.Types.ObjectId(id) } },
             {
                 $group: {
                     _id: null,

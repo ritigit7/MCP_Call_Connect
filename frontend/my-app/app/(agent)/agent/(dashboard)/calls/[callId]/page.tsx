@@ -5,7 +5,8 @@ import {
   LayoutDashboard, Phone, BarChart3, Target, Settings, LogOut, ChevronDown, Bell, Search, Clock, MoreHorizontal,
   ChevronLeft, ChevronRight, Menu, X, Share2, Download, Play, Pause, Volume2, Copy, FileText, File, Search as SearchIcon,
   Paperclip, Star, Smile, Meh, Frown, CheckCircle, Info, AlertTriangle, ArrowRight, Bot, BrainCircuit, ClipboardCheck,
-  UserCheck, TrendingUp, Book, Lightbulb, Flag
+  UserCheck, TrendingUp, Book, Lightbulb, Flag,
+  User
 } from "lucide-react";
 import Link from "next/link";
 
@@ -61,7 +62,9 @@ const Breadcrumb = () => (
 const CallHeaderCard = () => (
   <div className="bg-white rounded-xl shadow-sm p-6 flex flex-col md:flex-row items-start md:items-center justify-between">
     <div className="flex items-center gap-5">
-      <img src="/avatars/02.png" alt="Customer" className="w-20 h-20 rounded-full border-4 border-gray-100" />
+      <div className="w-20 h-20 rounded-full border-4 border-gray-100 bg-indigo-100 flex items-center justify-center">
+        <User size={40} className="text-indigo-600" />
+      </div>
       <div>
         <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
           <div className="font-semibold text-gray-500">Customer:</div>
@@ -589,7 +592,9 @@ const Sidebar = ({ isSidebarOpen, setIsSidebarOpen }: { isSidebarOpen: boolean; 
           </div>
           <div className={`px-6 py-4 border-b border-gray-700 ${!isSidebarOpen && "lg:px-0"}`}>
             <div className={`flex items-center gap-3 ${!isSidebarOpen && "lg:flex-col lg:gap-2 lg:justify-center"}`}>
-              <img src="/avatars/01.png" alt="Agent" className="h-12 w-12 rounded-full" />
+              <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center">
+                <User size={28} className="text-indigo-600" />
+              </div>
               <div className={`${!isSidebarOpen && "lg:hidden"}`}>
                 <p className="font-semibold text-base">Sarah Smith</p>
                 <div className="flex items-center gap-2 text-sm text-gray-300">
@@ -645,7 +650,9 @@ const Header = ({ isSidebarOpen, setIsSidebarOpen }: { isSidebarOpen: boolean; s
         </button>
         <div className="h-8 w-px bg-gray-200"></div>
         <div className="flex items-center gap-3">
-          <img src="/avatars/01.png" alt="Agent" className="h-10 w-10 rounded-full" />
+          <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+            <User size={24} className="text-indigo-600" />
+          </div>
           <div>
             <p className="text-sm font-semibold">Sarah Smith</p>
             <p className="text-xs text-gray-500">Agent</p>

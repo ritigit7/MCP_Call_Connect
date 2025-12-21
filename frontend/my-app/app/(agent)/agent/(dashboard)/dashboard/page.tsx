@@ -1,23 +1,17 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Phone,
   Clock,
-  PhoneIncoming,
   Star,
   MoreHorizontal,
   ChevronLeft,
   ChevronRight,
-  Mic,
-  PhoneOff,
   AlertCircle,
 } from "lucide-react";
-import Image from "next/image";
 import { baseURL } from "@/lib/api";
-import { useSocket } from "@/lib/socket-context";
 
-// type AgentStatus = "Online" | "Busy" | "Offline";
 type CallStatus = "Completed" | "Ongoing" | "Failed" | "Initiated" | "Missed" | "Voicemail";
 
 interface Call {
@@ -36,173 +30,17 @@ interface Stats {
   averageDuration: number;
 }
 
-interface Customer {
-  name: string;
-  email: string;
-  socketId?: string;
-}
-
-interface IncomingCallData {
-  callId: string;
-  customer: Customer;
-}
-
-interface WebRTCOfferData {
-  offer: RTCSessionDescriptionInit;
-  callId: string;
-}
-
-interface ICECandidateData {
-  candidate: RTCIceCandidateInit;
-  callId: string;
-}
-
 const AgentDashboardPage = () => {
-  const [isCallIncoming, setIsCallIncoming] = useState(false);
-  const [isCallActive, setIsCallActive] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [recentCalls, setRecentCalls] = useState<Call[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const { socket, isConnected } = useSocket();
-  const [incomingCall, setIncomingCall] = useState<IncomingCallData | null>(null);
-  // const [isCallActive, setIsCallActive] = useState(false); // Already defined
-  // const [callDuration, setCallDuration] = useState(0); // Defined in ActiveCallView, maybe move up?
-
-  // WebRTC Refs
-  const peerConnection = useRef<RTCPeerConnection | null>(null);
-  const localStream = useRef<MediaStream | null>(null);
-  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
-  const currentCallId = useRef<string | null>(null);
-
-  const setupWebRTC = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      localStream.current = stream;
-
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-      });
-
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-      pc.ontrack = (event) => {
-        if (remoteAudioRef.current) {
-          remoteAudioRef.current.srcObject = event.streams[0];
-        }
-      };
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate && socket) {
-          socket.emit('webrtc:ice-candidate', {
-            target: incomingCall?.customer?.socketId, // We need customer socket ID? 
-            // The server might handle routing based on callId or we need to send to specific target
-            // In index.html: socket.emit('webrtc:ice-candidate', { candidate: event.candidate, to: currentCallId }); 
-            // Actually index.html sends: socket.emit('webrtc:ice-candidate', { candidate: event.candidate, callId: currentCallId });
-            callId: currentCallId.current,
-            candidate: event.candidate
-          });
-        }
-      };
-
-      peerConnection.current = pc;
-    } catch (err) {
-      console.error("Error setting up WebRTC:", err);
-    }
-  }, [socket, incomingCall]);
-
-  const handleOffer = useCallback(async (offer: RTCSessionDescriptionInit) => {
-    if (!peerConnection.current) {
-      await setupWebRTC();
-    }
-
-    if (!peerConnection.current) return;
-
-    await peerConnection.current.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await peerConnection.current.createAnswer();
-    await peerConnection.current.setLocalDescription(answer);
-
-    if (socket && currentCallId.current) {
-      socket.emit('webrtc:answer', {
-        answer,
-        callId: currentCallId.current
-      });
-    }
-  }, [socket, setupWebRTC]);
-
-  const endCallCleanup = useCallback(() => {
-    setIsCallActive(false);
-    setIncomingCall(null);
-    currentCallId.current = null;
-
-    if (localStream.current) {
-      localStream.current.getTracks().forEach(track => track.stop());
-      localStream.current = null;
-    }
-
-    if (peerConnection.current) {
-      peerConnection.current.close();
-      peerConnection.current = null;
-    }
-
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!socket || !isConnected) return;
-
-    const agentId = localStorage.getItem('agent-id');
-    if (agentId) {
-      socket.emit('agent:join', { agentId });
-    }
-
-    const onIncomingCall = (data: IncomingCallData) => {
-      console.log('Incoming call:', data);
-      setIncomingCall(data);
-      currentCallId.current = data.callId;
-    };
-
-    const onCallEnded = () => {
-      endCallCleanup();
-    };
-
-    const onWebRTCOffer = async (data: WebRTCOfferData) => {
-      console.log('Received WebRTC offer');
-      await handleOffer(data.offer);
-    };
-
-    const onICECandidate = async (data: ICECandidateData) => {
-      if (peerConnection.current && data.candidate) {
-        try {
-          await peerConnection.current.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } catch (e) {
-          console.error("Error adding ICE candidate", e);
-        }
-      }
-    };
-
-    socket.on('call:incoming', onIncomingCall);
-    socket.on('call:ended', onCallEnded);
-    socket.on('webrtc:offer', onWebRTCOffer);
-    socket.on('webrtc:ice-candidate', onICECandidate);
-
-    return () => {
-      socket.off('call:incoming', onIncomingCall);
-      socket.off('call:ended', onCallEnded);
-      socket.off('webrtc:offer', onWebRTCOffer);
-      socket.off('webrtc:ice-candidate', onICECandidate);
-    };
-  }, [socket, isConnected, handleOffer, endCallCleanup]);
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       setError(null);
       try {
-
         const token = localStorage.getItem('agent-token');
         if (!token) {
           throw new Error("No authentication token found. Please log in again.");
@@ -219,7 +57,6 @@ const AgentDashboardPage = () => {
         ]);
 
         if (!statsRes.ok || !callsRes.ok) {
-          // Handle potential errors from either request
           const statsError = !statsRes.ok ? await statsRes.json() : null;
           const callsError = !callsRes.ok ? await callsRes.json() : null;
           throw new Error(statsError?.error || callsError?.error || "Failed to fetch dashboard data.");
@@ -241,54 +78,19 @@ const AgentDashboardPage = () => {
     fetchData();
   }, []);
 
-
-  const handleAcceptCall = async () => {
-    if (!incomingCall || !socket) return;
-    socket.emit('call:accept', { callId: incomingCall.callId });
-    setIsCallActive(true);
-    setIsCallIncoming(false);
-    await setupWebRTC();
-  };
-
-  const handleRejectCall = () => {
-    setIsCallIncoming(false);
-  };
-
-  const handleEndCall = () => {
-    if (socket && currentCallId.current) {
-      socket.emit('call:end', { callId: currentCallId.current });
-    }
-    endCallCleanup();
-  };
-
   return (
     <>
-      <audio ref={remoteAudioRef} autoPlay />
-      {isCallActive ? (
-        <ActiveCallView onEndCall={handleEndCall} />
+      {isLoading ? (
+        <DashboardSkeleton />
+      ) : error ? (
+        <ErrorDisplay message={error} />
       ) : (
         <>
-          {isLoading ? (
-            <DashboardSkeleton />
-          ) : error ? (
-            <ErrorDisplay message={error} />
-          ) : (
-            <>
-              <StatsCards stats={stats} />
-              <div className="mt-6">
-                <RecentCallsTable calls={recentCalls} />
-              </div>
-            </>
-          )}
+          <StatsCards stats={stats} />
+          <div className="mt-6">
+            <RecentCallsTable calls={recentCalls} />
+          </div>
         </>
-      )}
-      {(incomingCall || isCallIncoming) && (
-        <IncomingCallModal
-          onAccept={handleAcceptCall}
-          onReject={handleRejectCall}
-          customerName={incomingCall?.customer?.name || "Unknown Customer"}
-          customerEmail={incomingCall?.customer?.email || "No email"}
-        />
       )}
     </>
   );
@@ -314,11 +116,9 @@ const ErrorDisplay = ({ message }: { message: string }) => (
   </div>
 );
 
-
-
 const StatsCards = ({ stats }: { stats: Stats | null }) => {
   const score = 8.5;
-  const circumference = 2 * Math.PI * 18; // 2 * pi * r
+  const circumference = 2 * Math.PI * 18;
   const strokeDashoffset = circumference - (score / 10) * circumference;
 
   const formatDuration = (seconds: number) => {
@@ -334,8 +134,6 @@ const StatsCards = ({ stats }: { stats: Stats | null }) => {
       icon: Phone,
       iconBg: "bg-blue-100",
       iconColor: "text-blue-500",
-      // trend: "+12%", // This data is not available from the API
-      // trendColor: "text-green-500",
     },
     {
       label: "Active Calls",
@@ -450,122 +248,6 @@ const RecentCallsTable = ({ calls }: { calls: Call[] }) => {
         <div className="flex items-center gap-2">
           <button className="rounded-md p-2 hover:bg-gray-100"><ChevronLeft size={18} /></button>
           <button className="rounded-md p-2 hover:bg-gray-100"><ChevronRight size={18} /></button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const IncomingCallModal = ({ onAccept, onReject, customerName, customerEmail }: { onAccept: () => void; onReject: () => void; customerName: string; customerEmail: string; }) => {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="relative w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-2xl animate-pulse-border">
-        <style jsx>{`
-          @keyframes pulse-border {
-            0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7); }
-            70% { box-shadow: 0 0 0 20px rgba(37, 99, 235, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
-          }
-          .animate-pulse-border {
-            animation: pulse-border 2s infinite;
-          }
-        `}</style>
-        <h2 className="flex items-center justify-center gap-3 text-3xl font-bold text-gray-800">
-          Incoming Call <PhoneIncoming className="animate-shake" />
-        </h2>
-        <div className="mt-6 flex flex-col items-center">
-          <Image src="/avatars/02.png" alt="Customer" width={80} height={80} className="h-20 w-20 rounded-full border-4 border-gray-200" />
-          <p className="mt-4 text-2xl font-bold text-gray-900">{customerName}</p>
-          <p className="text-base text-gray-500">{customerEmail}</p>
-          <p className="text-base text-gray-500">+1 (555) 123-4567</p>
-        </div>
-        <div className="mt-8 flex justify-center gap-4">
-          <button onClick={onAccept} className="flex h-14 w-[200px] items-center justify-center gap-2 rounded-lg bg-green-500 text-lg font-bold text-white transition hover:bg-green-600">
-            Accept
-          </button>
-          <button onClick={onReject} className="flex h-14 w-[200px] items-center justify-center gap-2 rounded-lg bg-red-500 text-lg font-bold text-white transition hover:bg-red-600">
-            Reject
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const ActiveCallView = ({ onEndCall }: { onEndCall: () => void }) => {
-  const [isMuted, setIsMuted] = useState(false);
-  const [callDuration, setCallDuration] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => setCallDuration((prev) => prev + 1), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
-    const secs = (seconds % 60).toString().padStart(2, "0");
-    return `${mins}:${secs}`;
-  };
-
-  return (
-    <div className="w-full rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 p-8 text-white shadow-2xl">
-      <style jsx>{`
-        @keyframes pulse-bar {
-          0%, 100% { transform: scaleY(0.5); opacity: 0.5; }
-          50% { transform: scaleY(1); opacity: 1; }
-        }
-      `}</style>
-      <div className="flex flex-col items-center md:flex-row md:items-start md:gap-8">
-        {/* Customer Info */}
-        <div className="flex flex-col items-center text-center">
-          <Image src="/avatars/02.png" alt="Customer" width={96} height={96} className="h-24 w-24 rounded-full border-4 border-white/50" />
-          <h2 className="mt-4 text-3xl font-bold">Jane Cooper</h2>
-          <p className="text-lg text-white/80">Premium Customer</p>
-        </div>
-
-        {/* Call Info & Controls */}
-        <div className="mt-8 flex-1 text-center md:mt-0">
-          <div className="flex items-center justify-center gap-3 text-5xl font-mono tracking-widest">
-            <Clock className="h-10 w-10" />
-            <span>{formatDuration(callDuration)}</span>
-          </div>
-
-          <div className="my-8 flex h-16 items-center justify-center gap-2">
-            {[...Array(20)].map((_, i) => (
-              <div
-                key={i}
-                className="w-1.5 rounded-full bg-white/80"
-                style={{
-                  animation: `pulse-bar 1.2s infinite ease-in-out ${i * 0.08}s`,
-                  // height: `${Math.floor(Math.random() * 80) + 20}%`,
-                  height: `${Math.floor(Math.sin(i * 0.5 + callDuration * 0.1) * 30) + 50}%`, // Use sin wave for stable animation
-                }}
-              ></div>
-            ))}
-          </div>
-
-          <div className="flex items-center justify-center gap-2 text-sm">
-            <div className="h-3 w-3 animate-pulse rounded-full bg-red-500"></div>
-            <span>Recording...</span>
-          </div>
-
-          <div className="mt-10 grid grid-cols-2 gap-4 max-w-sm mx-auto">
-            <button
-              onClick={() => setIsMuted(!isMuted)}
-              className={`flex h-16 w-full flex-col items-center justify-center rounded-lg text-base font-semibold transition-colors ${isMuted ? "bg-white/30 hover:bg-white/40" : "bg-white/10 hover:bg-white/20"
-                }`}
-            >
-              <Mic size={24} />
-              <span className="mt-1 text-xs">{isMuted ? "Unmuted" : "Mute"}</span>
-            </button>
-            <button
-              onClick={onEndCall}
-              className="flex h-16 w-full flex-col items-center justify-center rounded-lg bg-red-500 text-base font-semibold text-white shadow-lg transition-all hover:bg-red-600 hover:shadow-xl"
-            >
-              <PhoneOff size={24} />
-              <span className="mt-1 text-xs">End Call</span>
-            </button>
-          </div>
         </div>
       </div>
     </div>

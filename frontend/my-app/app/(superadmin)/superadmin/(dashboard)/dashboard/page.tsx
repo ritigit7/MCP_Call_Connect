@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   Users,
   Activity,
@@ -19,11 +19,43 @@ import {
   AlertTriangle,
   FileText,
   Send,
+  User,
+  Loader2,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { baseURL } from "@/lib/api";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-import Image from "next/image";
+// Types for API response
+interface DashboardStats {
+  agents: {
+    total: number;
+    deleted: number;
+    active: number;
+  };
+  calls: {
+    total: number;
+    completed: number;
+    ongoing: number;
+  };
+  averages: {
+    avgAgentScore: number;
+    avgCustomerSatisfaction: number;
+  };
+  topAgents: {
+    _id: string;
+    name: string;
+    email: string;
+    avgScore: number;
+    totalCalls: number;
+  }[];
+  callsByDate: {
+    _id: string;
+    count: number;
+  }[];
+}
 
-const StatCard = ({ title, value, trend, icon: Icon, color, trendColor }) => (
+const StatCard = ({ title, value, trend, icon: Icon, color, trendColor }: any) => (
   <div
     className="bg-[#1E293B] rounded-xl p-6 relative overflow-hidden border border-gray-700/50"
     style={{ borderTop: `3px solid ${color}` }}
@@ -51,7 +83,7 @@ const StatCard = ({ title, value, trend, icon: Icon, color, trendColor }) => (
   </div>
 );
 
-const HealthMetric = ({ title, value, percentage, status, icon: Icon }) => (
+const HealthMetric = ({ title, value, percentage, status, icon: Icon }: any) => (
   <div className="flex items-center gap-4">
     <Icon className="w-6 h-6 text-gray-400" />
     <div className="flex-1">
@@ -77,8 +109,8 @@ const HealthMetric = ({ title, value, percentage, status, icon: Icon }) => (
   </div>
 );
 
-const TopPerformerRow = ({ rank, name, calls, score }) => {
-  const rankColors = {
+const TopPerformerRow = ({ rank, name, calls, score }: any) => {
+  const rankColors: any = {
     1: "border-yellow-400 text-yellow-400",
     2: "border-gray-400 text-gray-400",
     3: "border-orange-400 text-orange-400",
@@ -96,21 +128,21 @@ const TopPerformerRow = ({ rank, name, calls, score }) => {
       </td>
       <td className="p-4 font-semibold text-white">
         <div className="flex items-center gap-3">
-          <Image src="/avatars/02.png" alt="Customer" width={80} height={80} className="h-20 w-20 rounded-full border-4 border-gray-200" />
+          <User className="h-8 w-8 text-gray-600" />
           {name}
         </div>
       </td>
       <td className="p-4 text-gray-300">{calls}</td>
       <td className="p-4 font-bold text-white">
         <span className="flex items-center gap-1">
-          <Star size={16} className="text-yellow-400" /> {score.toFixed(1)}
+          <Star size={16} className="text-yellow-400" /> {score?.toFixed(1) || "N/A"}
         </span>
       </td>
     </tr>
   );
 };
 
-const ActivityItem = ({ icon: Icon, color, title, description, time }) => (
+const ActivityItem = ({ icon: Icon, color, title, description, time }: any) => (
   <div className="flex gap-4">
     <div className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center bg-${color}-500/10`}>
       <Icon size={20} className={`text-${color}-400`} />
@@ -123,7 +155,7 @@ const ActivityItem = ({ icon: Icon, color, title, description, time }) => (
   </div>
 );
 
-const QuickActionButton = ({ icon: Icon, label, color }) => (
+const QuickActionButton = ({ icon: Icon, label, color }: any) => (
   <button className={`flex-1 flex flex-col items-center justify-center gap-2 p-4 bg-[#1E293B] rounded-lg border border-gray-700/50 hover:bg-${color}-500/10 hover:text-${color}-400 hover:border-${color}-500/50 transition-all duration-200`}>
     <Icon size={24} />
     <span className="font-semibold text-sm">{label}</span>
@@ -131,53 +163,101 @@ const QuickActionButton = ({ icon: Icon, label, color }) => (
 );
 
 const SuperAdminDashboardPage = () => {
-  const topPerformers = [
-    { rank: 1, name: "Sarah Smith", calls: 52, score: 9.2 },
-    { rank: 2, name: "John Doe", calls: 48, score: 9.0 },
-    { rank: 3, name: "Mike Wilson", calls: 45, score: 8.9 },
-    { rank: 4, name: "Lisa Brown", calls: 43, score: 8.7 },
-    { rank: 5, name: "Tom Davis", calls: 41, score: 8.5 },
-  ];
+  const router = useRouter();
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const token = localStorage.getItem("superAdminToken");
+        if (!token) {
+          router.push("/superadmin/login");
+          return;
+        }
+
+        const response = await fetch(`${baseURL}/superadmin/dashboard/stats`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch dashboard statistics");
+        }
+
+        const data = await response.json();
+        setStats(data);
+      } catch (err) {
+        console.error("Error fetching dashboard stats:", err);
+        setError("Failed to load dashboard data");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, [router]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-100px)]">
+        <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-100px)]">
+        <div className="text-center">
+          <p className="text-red-500 text-xl mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-white"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Calculate today calls from callsByDate
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayCallsHelper = stats?.callsByDate.find(d => d._id === todayStr);
+  const todayCalls = todayCallsHelper ? todayCallsHelper.count : 0;
+
+  // Prepare chart data
+  const chartData = stats?.callsByDate.map(d => ({
+    date: d._id,
+    calls: d.count
+  })) || [];
 
   return (
     <div className="space-y-6">
-      {/* Alert Bar */}
-      <div className="p-4 rounded-xl bg-gradient-to-r from-orange-500/30 to-red-500/30 border border-orange-400/50 flex justify-between items-center">
-        <div className="flex items-center gap-4">
-          <AlertTriangle className="text-orange-300" size={24} />
-          <div>
-            <p className="font-bold text-white">
-              3 agents require attention
-            </p>
-            <p className="text-sm text-red-300">1 critical system alert</p>
-          </div>
-        </div>
-        <button className="flex items-center gap-2 text-sm font-semibold text-white bg-white/10 px-4 py-2 rounded-lg hover:bg-white/20 transition-colors">
-          View Details <ChevronRight size={16} />
-        </button>
-      </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Active Agents"
-          value="150"
-          trend="+5"
+          value={stats?.agents.active.toString() || "0"}
+          trend="+5" // This would ideally properly calculated if historic data was available
           icon={Users}
           color="#3b82f6"
           trendColor="green"
         />
         <StatCard
           title="Total Calls Today"
-          value="5,420"
-          trend="+234"
+          value={todayCalls.toLocaleString()}
+          trend="+12%"
           icon={Activity}
           color="#8b5cf6"
           trendColor="green"
         />
         <StatCard
           title="Average Score"
-          value="8.2"
+          value={stats?.averages.avgAgentScore.toFixed(1) || "0.0"}
           trend="+0.3"
           icon={Star}
           color="#10b981"
@@ -185,7 +265,7 @@ const SuperAdminDashboardPage = () => {
         />
         <StatCard
           title="Satisfaction Rate"
-          value="87%"
+          value={`${(stats?.averages.avgCustomerSatisfaction || 0).toFixed(0)}%`}
           trend="-2%"
           icon={CheckCircle}
           color="#ef4444"
@@ -193,15 +273,37 @@ const SuperAdminDashboardPage = () => {
         />
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-2 gap-6">
         <div className="col-span-3 lg:col-span-2 space-y-6">
           {/* Calls Activity Chart */}
           <div className="bg-[#1E293B] rounded-xl p-6 border border-gray-700/50">
             <h2 className="text-xl font-bold text-white mb-4">
               📈 Call Volume (Last 30 Days)
             </h2>
-            <div className="h-72 bg-black/20 rounded-lg flex items-center justify-center">
-              <p className="text-gray-500">[Area Chart Placeholder]</p>
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorCalls" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} tickFormatter={(value) => value.slice(5)} />
+                  <YAxis stroke="#9ca3af" fontSize={12} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#fff' }}
+                    itemStyle={{ color: '#fff' }}
+                  />
+                  <Area type="monotone" dataKey="calls" stroke="#3b82f6" fillOpacity={1} fill="url(#colorCalls)" />
+                </AreaChart>
+              </ResponsiveContainer>
+              {chartData.length === 0 && (
+                <div className="flex h-full items-center justify-center text-gray-500">
+                  No chart data available
+                </div>
+              )}
             </div>
           </div>
 
@@ -220,92 +322,28 @@ const SuperAdminDashboardPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {topPerformers.map((performer) => (
-                  <TopPerformerRow key={performer.rank} {...performer} />
+                {stats?.topAgents.map((performer, index) => (
+                  <TopPerformerRow
+                    key={performer._id}
+                    rank={index + 1}
+                    name={performer.name}
+                    calls={performer.totalCalls}
+                    score={performer.avgScore}
+                  />
                 ))}
+                {(!stats?.topAgents || stats.topAgents.length === 0) && (
+                  <tr>
+                    <td colSpan={4} className="p-8 text-center text-gray-500">
+                      No top agents data available
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
 
-        <div className="col-span-3 lg:col-span-1 space-y-6">
-          {/* System Health */}
-          <div className="bg-[#1E293B] rounded-xl p-6 border border-gray-700/50">
-            <h2 className="text-xl font-bold text-white mb-6">
-              🏥 System Health
-            </h2>
-            <div className="space-y-6">
-              <HealthMetric
-                title="API Response Time"
-                value="245ms"
-                percentage={75}
-                status="Normal"
-                icon={Server}
-              />
-              <HealthMetric
-                title="Database Performance"
-                value="98%"
-                percentage={98}
-                status="Excellent"
-                icon={Database}
-              />
-              <HealthMetric
-                title="WebSocket Connections"
-                value="47/50"
-                percentage={94}
-                status="Stable"
-                icon={Wifi}
-              />
-              <HealthMetric
-                title="Storage Usage"
-                value="34%"
-                percentage={34}
-                status="Healthy"
-                icon={HardDrive}
-              />
-            </div>
-          </div>
 
-          {/* Recent Activity */}
-          <div className="bg-[#1E293B] rounded-xl p-6 border border-gray-700/50">
-            <h2 className="text-xl font-bold text-white mb-6">
-              📋 Recent System Activity
-            </h2>
-            <div className="space-y-6">
-              <ActivityItem
-                icon={PlusCircle}
-                color="green"
-                title="New agent registered"
-                description="Sarah Connor"
-                time="5 minutes ago"
-              />
-              <ActivityItem
-                icon={Settings2}
-                color="blue"
-                title="System updated"
-                description="Version 2.1.0 deployed"
-                time="1 hour ago"
-              />
-              <ActivityItem
-                icon={Users}
-                color="yellow"
-                title="Agent deactivated"
-                description="John Smith"
-                time="2 hours ago"
-              />
-              <ActivityItem
-                icon={XCircle}
-                color="red"
-                title="High churn risk detected"
-                description="Customer #1234"
-                time="3 hours ago"
-              />
-            </div>
-            <button className="w-full mt-6 text-sm font-semibold text-blue-400 hover:text-blue-300 transition-colors">
-              View All Activity →
-            </button>
-          </div>
-        </div>
       </div>
 
       {/* Quick Actions */}

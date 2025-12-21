@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
     Search, Plus, MoreVertical, X, CheckCircle,
-    Star, TrendingUp, TrendingDown, Loader2
+    Star, TrendingUp, TrendingDown, Loader2, Edit, Trash2, Eye, RotateCcw, Power, AlertTriangle
 } from 'lucide-react';
 import {
     useReactTable, getCoreRowModel, getFilteredRowModel, getPaginationRowModel, getSortedRowModel,
@@ -26,7 +26,144 @@ type Agent = {
     };
     score: number;
     isActive: boolean;
+    deletedAt?: string | null;
 };
+
+// Modal Component
+const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+            <div className="relative z-50 w-full max-w-lg bg-slate-800 rounded-xl shadow-2xl border border-slate-700 p-6 mx-4">
+                <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-xl font-bold text-white">{title}</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg transition-colors">
+                        <X className="w-5 h-5 text-gray-400" />
+                    </button>
+                </div>
+                {children}
+            </div>
+        </div>
+    );
+};
+
+// Create/Edit Agent Form
+const AgentForm = ({ agent, onSubmit, onCancel, isLoading }: {
+    agent?: Agent | null;
+    onSubmit: (data: { name: string; email: string; password?: string }) => void;
+    onCancel: () => void;
+    isLoading: boolean;
+}) => {
+    const [name, setName] = useState(agent?.name || '');
+    const [email, setEmail] = useState(agent?.email || '');
+    const [password, setPassword] = useState('');
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const data: { name: string; email: string; password?: string } = { name, email };
+        if (!agent && password) data.password = password;
+        onSubmit(data);
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Full Name</label>
+                <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    placeholder="Enter agent name"
+                    required
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Email Address</label>
+                <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    placeholder="Enter email address"
+                    required
+                />
+            </div>
+            {!agent && (
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+                    <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        placeholder="Enter password (min 6 characters)"
+                        required
+                        minLength={6}
+                    />
+                </div>
+            )}
+            <div className="flex gap-3 pt-4">
+                <button
+                    type="button"
+                    onClick={onCancel}
+                    className="flex-1 px-4 py-3 bg-slate-700 text-gray-300 rounded-lg font-medium hover:bg-slate-600 transition-colors"
+                >
+                    Cancel
+                </button>
+                <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg font-medium hover:from-blue-600 hover:to-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                    {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {agent ? 'Update Agent' : 'Create Agent'}
+                </button>
+            </div>
+        </form>
+    );
+};
+
+// Delete Confirmation Dialog
+const DeleteConfirmation = ({ agent, onConfirm, onCancel, isLoading, isPermanent }: {
+    agent: Agent;
+    onConfirm: () => void;
+    onCancel: () => void;
+    isLoading: boolean;
+    isPermanent?: boolean;
+}) => (
+    <div className="text-center">
+        <div className={`w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center ${isPermanent ? 'bg-red-500/20' : 'bg-yellow-500/20'}`}>
+            <AlertTriangle className={`w-8 h-8 ${isPermanent ? 'text-red-500' : 'text-yellow-500'}`} />
+        </div>
+        <h3 className="text-lg font-semibold text-white mb-2">
+            {isPermanent ? 'Permanently Delete Agent?' : 'Deactivate Agent?'}
+        </h3>
+        <p className="text-gray-400 mb-6">
+            {isPermanent
+                ? `This will permanently delete "${agent.name}". This action cannot be undone.`
+                : `This will deactivate "${agent.name}". The agent can be restored later.`
+            }
+        </p>
+        <div className="flex gap-3">
+            <button
+                onClick={onCancel}
+                className="flex-1 px-4 py-3 bg-slate-700 text-gray-300 rounded-lg font-medium hover:bg-slate-600 transition-colors"
+            >
+                Cancel
+            </button>
+            <button
+                onClick={onConfirm}
+                disabled={isLoading}
+                className={`flex-1 px-4 py-3 ${isPermanent ? 'bg-red-600 hover:bg-red-700' : 'bg-yellow-600 hover:bg-yellow-700'} text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2`}
+            >
+                {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isPermanent ? 'Delete Permanently' : 'Deactivate'}
+            </button>
+        </div>
+    </div>
+);
 
 // --- HELPER COMPONENTS & FUNCTIONS ---
 
@@ -77,54 +214,197 @@ const AgentManagementPage = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState("");
 
-    useEffect(() => {
-        const fetchAgents = async () => {
-            try {
-                const token = localStorage.getItem("superAdminToken");
-                if (!token) {
-                    router.push('/superadmin/login');
-                    return;
-                }
+    // Modal states
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [showInactive, setShowInactive] = useState(false);
+    const [actionMenuId, setActionMenuId] = useState<string | null>(null);
 
-                const response = await fetch(`${baseURL}/superadmin/agents`, {
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
-                });
+    const getToken = () => localStorage.getItem("superAdminToken");
 
-                if (!response.ok) {
-                    throw new Error('Failed to fetch agents');
-                }
-
-                const responseData = await response.json();
-
-                // Map backend data to frontend Agent type
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const mappedAgents: Agent[] = responseData.agents.map((agent: any) => ({
-                    id: agent._id,
-                    name: agent.name,
-                    email: agent.email,
-                    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(agent.name)}&background=random`,
-                    status: (agent.status.charAt(0).toUpperCase() + agent.status.slice(1)) as AgentStatus,
-                    calls: {
-                        total: agent.totalCalls || 0,
-                        trend: 'stable' // Backend doesn't provide trend yet
-                    },
-                    score: agent.avgPerformanceScore || 0,
-                    isActive: agent.isActive
-                }));
-
-                setData(mappedAgents);
-            } catch (err) {
-                console.error("Error fetching agents:", err);
-                setError("Failed to load agents. Please try again.");
-            } finally {
-                setIsLoading(false);
+    const fetchAgents = async () => {
+        try {
+            const token = getToken();
+            if (!token) {
+                router.push('/superadmin/login');
+                return;
             }
-        };
 
+            const response = await fetch(`${baseURL}/superadmin/agents?isActive=${!showInactive}`, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch agents');
+            }
+
+            const responseData = await response.json();
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const mappedAgents: Agent[] = responseData.agents.map((agent: any) => ({
+                id: agent._id,
+                name: agent.name,
+                email: agent.email,
+                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(agent.name)}&background=random`,
+                status: (agent.status.charAt(0).toUpperCase() + agent.status.slice(1)) as AgentStatus,
+                calls: {
+                    total: agent.totalCalls || 0,
+                    trend: 'stable'
+                },
+                score: agent.avgPerformanceScore || 0,
+                isActive: agent.isActive,
+                deletedAt: agent.deletedAt
+            }));
+
+            setData(mappedAgents);
+        } catch (err) {
+            console.error("Error fetching agents:", err);
+            setError("Failed to load agents. Please try again.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
         fetchAgents();
-    }, [router]);
+    }, [router, showInactive]);
+
+    // Create Agent
+    const handleCreateAgent = async (agentData: { name: string; email: string; password?: string }) => {
+        setIsSubmitting(true);
+        try {
+            const response = await fetch(`${baseURL}/superadmin/agents`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${getToken()}`
+                },
+                body: JSON.stringify(agentData)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to create agent');
+            }
+
+            setShowCreateModal(false);
+            fetchAgents();
+        } catch (err) {
+            console.error("Error creating agent:", err);
+            alert((err as Error).message);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    // Update Agent
+    const handleUpdateAgent = async (agentData: { name: string; email: string }) => {
+        if (!selectedAgent) return;
+        setIsSubmitting(true);
+        try {
+            const response = await fetch(`${baseURL}/superadmin/agents/${selectedAgent.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${getToken()}`
+                },
+                body: JSON.stringify(agentData)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to update agent');
+            }
+
+            setShowEditModal(false);
+            setSelectedAgent(null);
+            fetchAgents();
+        } catch (err) {
+            console.error("Error updating agent:", err);
+            alert((err as Error).message);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    // Delete/Deactivate Agent
+    const handleDeleteAgent = async () => {
+        if (!selectedAgent) return;
+        setIsSubmitting(true);
+        try {
+            const response = await fetch(`${baseURL}/superadmin/agents/${selectedAgent.id}`, {
+                method: 'DELETE',
+                headers: {
+                    Authorization: `Bearer ${getToken()}`
+                }
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to delete agent');
+            }
+
+            setShowDeleteModal(false);
+            setSelectedAgent(null);
+            fetchAgents();
+        } catch (err) {
+            console.error("Error deleting agent:", err);
+            alert((err as Error).message);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    // Restore Agent
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const handleRestoreAgent = async (agent: Agent) => {
+        try {
+            const response = await fetch(`${baseURL}/superadmin/agents/${agent.id}/restore`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${getToken()}`
+                }
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to restore agent');
+            }
+
+            fetchAgents();
+        } catch (err) {
+            console.error("Error restoring agent:", err);
+            alert((err as Error).message);
+        }
+    };
+
+    // Toggle Agent Status
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const handleToggleStatus = async (agent: Agent) => {
+        try {
+            const response = await fetch(`${baseURL}/superadmin/agents/${agent.id}/toggle-status`, {
+                method: 'PATCH',
+                headers: {
+                    Authorization: `Bearer ${getToken()}`
+                }
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to toggle agent status');
+            }
+
+            fetchAgents();
+        } catch (err) {
+            console.error("Error toggling status:", err);
+            alert((err as Error).message);
+        }
+    };
 
     const columns = useMemo<ColumnDef<Agent>[]>(
         () => [
@@ -186,17 +466,81 @@ const AgentManagementPage = () => {
             },
             {
                 id: 'actions',
-                cell: ({ row }) => (
-                    <div className="relative">
-                        <button className="p-2 rounded-full hover:bg-slate-700">
-                            <MoreVertical className="w-5 h-5" />
-                        </button>
-                        {/* Dropdown menu would be implemented here */}
-                    </div>
-                ),
+                cell: ({ row }) => {
+                    const agent = row.original;
+                    const isMenuOpen = actionMenuId === agent.id;
+
+                    return (
+                        <div className="relative">
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActionMenuId(isMenuOpen ? null : agent.id);
+                                }}
+                                className="p-2 rounded-full hover:bg-slate-700"
+                            >
+                                <MoreVertical className="w-5 h-5" />
+                            </button>
+                            {isMenuOpen && (
+                                <div className="absolute right-0 z-20 mt-2 w-48 bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1">
+                                    <button
+                                        onClick={() => {
+                                            router.push(`/superadmin/agents/${agent.id}`);
+                                            setActionMenuId(null);
+                                        }}
+                                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-slate-700"
+                                    >
+                                        <Eye className="w-4 h-4" /> View Details
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setSelectedAgent(agent);
+                                            setShowEditModal(true);
+                                            setActionMenuId(null);
+                                        }}
+                                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-slate-700"
+                                    >
+                                        <Edit className="w-4 h-4" /> Edit Agent
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            handleToggleStatus(agent);
+                                            setActionMenuId(null);
+                                        }}
+                                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-slate-700"
+                                    >
+                                        <Power className="w-4 h-4" /> {agent.isActive ? 'Deactivate' : 'Activate'}
+                                    </button>
+                                    {!agent.isActive && (
+                                        <button
+                                            onClick={() => {
+                                                handleRestoreAgent(agent);
+                                                setActionMenuId(null);
+                                            }}
+                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-green-400 hover:bg-slate-700"
+                                        >
+                                            <RotateCcw className="w-4 h-4" /> Restore Agent
+                                        </button>
+                                    )}
+                                    <div className="border-t border-slate-600 my-1" />
+                                    <button
+                                        onClick={() => {
+                                            setSelectedAgent(agent);
+                                            setShowDeleteModal(true);
+                                            setActionMenuId(null);
+                                        }}
+                                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-slate-700"
+                                    >
+                                        <Trash2 className="w-4 h-4" /> Delete Agent
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    );
+                },
             },
         ],
-        []
+        [actionMenuId, router, handleToggleStatus, handleRestoreAgent]
     );
 
     const table = useReactTable({
@@ -237,14 +581,48 @@ const AgentManagementPage = () => {
     }
 
     return (
-        <div className="bg-slate-900 min-h-screen text-white p-8">
+        <div className="bg-slate-900 min-h-screen text-white p-8" onClick={() => setActionMenuId(null)}>
+            {/* Create Agent Modal */}
+            <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create New Agent">
+                <AgentForm
+                    onSubmit={handleCreateAgent}
+                    onCancel={() => setShowCreateModal(false)}
+                    isLoading={isSubmitting}
+                />
+            </Modal>
+
+            {/* Edit Agent Modal */}
+            <Modal isOpen={showEditModal} onClose={() => { setShowEditModal(false); setSelectedAgent(null); }} title="Edit Agent">
+                <AgentForm
+                    agent={selectedAgent}
+                    onSubmit={handleUpdateAgent}
+                    onCancel={() => { setShowEditModal(false); setSelectedAgent(null); }}
+                    isLoading={isSubmitting}
+                />
+            </Modal>
+
+            {/* Delete Confirmation Modal */}
+            <Modal isOpen={showDeleteModal} onClose={() => { setShowDeleteModal(false); setSelectedAgent(null); }} title="Confirm Action">
+                {selectedAgent && (
+                    <DeleteConfirmation
+                        agent={selectedAgent}
+                        onConfirm={handleDeleteAgent}
+                        onCancel={() => { setShowDeleteModal(false); setSelectedAgent(null); }}
+                        isLoading={isSubmitting}
+                    />
+                )}
+            </Modal>
+
             {/* Header */}
             <div className="flex justify-between items-center mb-8">
                 <div>
                     <h1 className="text-3xl font-bold text-white">Agent Management</h1>
                     <p className="text-slate-400 mt-1">Manage all agents and their performance</p>
                 </div>
-                <button className="flex items-center gap-2 bg-gradient-to-r from-green-500 to-teal-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg hover:scale-105 transition-transform">
+                <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="flex items-center gap-2 bg-gradient-to-r from-green-500 to-teal-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg hover:scale-105 transition-transform"
+                >
                     <Plus className="w-5 h-5" />
                     Create New Agent
                 </button>
@@ -263,7 +641,16 @@ const AgentManagementPage = () => {
                             className="bg-slate-700 border border-slate-600 rounded-lg pl-10 pr-4 py-2 w-64 focus:w-96 transition-all duration-300 focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                     </div>
-                    {/* Other filters can be added here */}
+                    {/* Status Filter Toggle */}
+                    <button
+                        onClick={() => setShowInactive(!showInactive)}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${showInactive
+                            ? 'bg-yellow-600 text-white'
+                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                            }`}
+                    >
+                        {showInactive ? 'Showing Inactive' : 'Show Inactive'}
+                    </button>
                 </div>
                 <button className="bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium py-2 px-4 rounded-lg">
                     Export CSV
