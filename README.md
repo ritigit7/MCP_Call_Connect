@@ -7,6 +7,7 @@ A comprehensive WebRTC-based call center solution featuring real-time audio call
 ## Table of Contents
 
 - [Key Features](#key-features)
+- [Screenshots](#screenshots)
 - [System Architecture](#system-architecture)
 - [Tech Stack](#tech-stack)
 - [Prerequisites](#prerequisites)
@@ -62,32 +63,52 @@ A comprehensive WebRTC-based call center solution featuring real-time audio call
 
 ---
 
+## Screenshots
+
+### Agent Portal
+| Dashboard | Call Stats | Analytics | Performance |
+| :---: | :---: | :---: | :---: |
+| ![Agent Dashboard](./images/Agent_image_1.png) | ![Call Stats](./images/Agent_image_2.png) | ![Analytics](./images/Agent_image_3.png) | ![Performance](./images/Agent_image_4.png) |
+| ![Calls](./images/Agent_image_5.png) | ![Agent Analytics](./images/Agent_image_6.png) | ![Agent Performance](./images/Agent_image_7.png) | ![Settings](./images/Agent_image_8.png) |
+
+### Customer Portal
+| Registration | Live Call Interface |
+| :---: | :---: |
+| ![Customer Registration](./images/Customer_1.png) | ![Call Interface](./images/Customer_2.png) |
+
+### SuperAdmin & Analytics
+| Admin Dashboard | Agent Management | Call Analysis Insights |
+| :---: | :---: | :---: |
+| ![Admin Dashboard](./images/Superadmin_1.png) | ![Agent Management](./images/Superadmin_2.png) | ![AI Analysis](./images/Superadmin_3.png) |
+
+---
+
 ## System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              FRONTEND (Next.js 16)                          │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐             │
-│  │Agent Portal │    │Customer     │    │SuperAdmin Portal    │             │
-│  │- Dashboard  │    │Portal       │    │- Agent Management   │             │
-│  │- Calls      │    │- Call Page  │    │- Dashboard KPIs     │             │
-│  │- Analytics  │    │- History    │    │- Analytics          │             │
-│  └──────┬──────┘    └──────┬──────┘    └──────────┬──────────┘             │
-└─────────┼──────────────────┼─────────────────────┼──────────────────────────┘
-          │                  │                     │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐              │
+│  │Agent Portal │    │Customer     │    │SuperAdmin Portal    │              │
+│  │- Dashboard  │    │Portal       │    │- Agent Management   │              │
+│  │- Calls      │    │- Call Page  │    │- Dashboard KPIs     │              │
+│  │- Analytics  │    │- History    │    │- Analytics          │              │
+│  └──────┬──────┘    └──────┬──────┘    └──────────┬──────────┘              │
+└─────────┼──────────────────┼──────────────────────┼─────────────────────────┘
+          │                  │                      │
           │    REST API + Socket.IO (WebRTC Signaling)
           ▼                  ▼                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         BACKEND (Node.js/Express)                           │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐             │
-│  │Signaling Service│  │Recording Service│  │Auth Middleware  │             │
-│  │(Socket.IO)      │  │(WebM storage)   │  │(JWT validation) │             │
-│  └────────┬────────┘  └────────┬────────┘  └─────────────────┘             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐              │
+│  │Signaling Service│  │Recording Service│  │Auth Middleware  │              │
+│  │(Socket.IO)      │  │(WebM storage)   │  │(JWT validation) │              │
+│  └────────┬────────┘  └────────┬────────┘  └─────────────────┘              │
 │           │                    │                                            │
-│  ┌────────▼────────────────────▼────────┐  ┌─────────────────┐             │
-│  │         Transcription Service        │  │LLM Analysis     │             │
+│  ┌────────▼────────────────────▼────────┐   ┌─────────────────┐             │
+│  │         Transcription Service        │   │LLM Analysis     │             │
 │  │    (Calls Python API on completion)  │──▶│Service (GPT-4)  │             │
-│  └────────┬─────────────────────────────┘  └────────┬────────┘             │
+│  └────────┬─────────────────────────────┘   └────────┬────────┘             │
 │           │                                          │                      │
 │           │              MongoDB                     │                      │
 │           └──────────────────┬───────────────────────┘                      │
@@ -103,10 +124,10 @@ A comprehensive WebRTC-based call center solution featuring real-time audio call
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                      PYTHON AI SERVICE (FastAPI)                            │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐             │
-│  │  Whisper Model  │  │  Pyannote Model │  │  Audio Utils    │             │
-│  │  (Transcription)│  │  (Diarization)  │  │  (WAV convert)  │             │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐              │
+│  │  Whisper Model  │  │  Pyannote Model │  │  Audio Utils    │              │
+│  │  (Transcription)│  │  (Diarization)  │  │  (WAV convert)  │              │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
