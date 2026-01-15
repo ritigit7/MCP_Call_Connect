@@ -28,6 +28,7 @@ interface Stats {
   totalCalls: number;
   ongoingCalls: number;
   averageDuration: number;
+  agentScore?: number;
 }
 
 const AgentDashboardPage = () => {
@@ -64,8 +65,24 @@ const AgentDashboardPage = () => {
 
         const statsData = await statsRes.json();
         const callsData = await callsRes.json();
+        
+        // Fetch specific agent metrics if agent ID is available
+        const agentId = localStorage.getItem('agent-id');
+        let agentScore = 0;
+        
+        if (agentId) {
+            try {
+                const metricsRes = await fetch(`${baseURL}/analysis/agent/${agentId}/metrics`, { headers });
+                if (metricsRes.ok) {
+                    const metricsResponse = await metricsRes.json();
+                    agentScore = metricsResponse.metrics?.avgScore || 0;
+                }
+            } catch (error) {
+                console.error("Failed to fetch agent metrics:", error);
+            }
+        }
 
-        setStats(statsData);
+        setStats({ ...statsData, agentScore });
         setRecentCalls(callsData.calls);
 
       } catch (err) {
@@ -117,7 +134,7 @@ const ErrorDisplay = ({ message }: { message: string }) => (
 );
 
 const StatsCards = ({ stats }: { stats: Stats | null }) => {
-  const score = 8.5;
+  const score = stats?.agentScore ? Number(stats.agentScore.toFixed(1)) : 0;
   const circumference = 2 * Math.PI * 18;
   const strokeDashoffset = circumference - (score / 10) * circumference;
 

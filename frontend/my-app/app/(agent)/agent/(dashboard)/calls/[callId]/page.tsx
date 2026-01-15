@@ -1,667 +1,681 @@
 "use client";
 
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useEffect, use } from "react";
 import {
-  LayoutDashboard, Phone, BarChart3, Target, Settings, LogOut, ChevronDown, Bell, Search, Clock, MoreHorizontal,
-  ChevronLeft, ChevronRight, Menu, X, Share2, Download, Play, Pause, Volume2, Copy, FileText, File, Search as SearchIcon,
-  Paperclip, Star, Smile, Meh, Frown, CheckCircle, Info, AlertTriangle, ArrowRight, Bot, BrainCircuit, ClipboardCheck,
-  UserCheck, TrendingUp, Book, Lightbulb, Flag,
-  User
+  Phone, BarChart3, ChevronLeft, Download, Copy, FileText, File,
+  CheckCircle, Flag, User, Mic, Clock, Calendar, Mail, Loader, AlertCircle, LucideIcon
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { baseURL } from "@/lib/api";
 
-type AgentStatus = "Online" | "Busy" | "Offline";
+// --- Types ---
+
+type CallStatus = "Completed" | "Ongoing" | "Failed" | "Initiated";
+
+interface Call {
+  id: string;
+  callId: string;
+  date: string;
+  time: string;
+  customer: {
+    name: string;
+    email: string;
+    phone?: string;
+  };
+  duration: string;
+  status: CallStatus;
+  recordingUrl?: string;
+  agent?: {
+      name: string;
+  };
+}
+
+interface TranscriptSegment {
+  speaker: string;
+  text: string;
+  startTime?: number;
+  endTime?: number;
+  start?: number;
+  end?: number;
+  confidence?: number;
+}
+
+interface Transcription {
+  status: string;
+  conversation?: TranscriptSegment[];
+  segments?: TranscriptSegment[];
+  fullText?: string;
+}
+
+interface CallAnalysis {
+  summary: {
+    brief: string;
+    keyPoints: string[];
+    outcome: string;
+  };
+  sentiment: {
+    overall: string;
+    scores: {
+      overall: number;
+      customer: number;
+      agent: number;
+    };
+  };
+  topics: {
+    main: string;
+    tags: string[];
+    subTopics?: string[];
+  };
+  actionItems: {
+    customerTasks: Array<{ task: string; priority: string }>;
+    agentFollowUps: Array<{ action: string; status: string }>;
+    promisesMade: string[];
+  };
+  issues: {
+    primary: string;
+    status: string;
+    severity: string;
+  };
+  agentPerformance: {
+    strengths: string[];
+    areasForImprovement: string[];
+    scores: {
+      overall: number;
+      communication: number;
+      empathy: number;
+      problemSolving: number;
+    };
+  };
+  customerExperience: {
+    satisfactionIndicators: string[];
+    painPoints: string[];
+    effortLevel: string;
+  };
+  recommendations: {
+    forAgent: string[];
+    forManager: string[];
+  };
+}
+
 type Tab = "overview" | "transcript" | "analysis";
 
-const CallDetailPage = () => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+// --- Main Page Component ---
+
+export default function CallDetailPage({ params }: { params: Promise<{ callId: string }> }) {
+  // Unwrap params using React.use()
+  const { callId } = use(params);
+  
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialTab = (searchParams.get("tab") as Tab) || "overview";
+
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+  
+  // Data State
+  const [call, setCall] = useState<Call | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Sync activeTab with URL param if it changes externally or on first load
+    const tabFromUrl = searchParams.get("tab") as Tab;
+    if (tabFromUrl && tabFromUrl !== activeTab) {
+        setActiveTab(tabFromUrl);
+    }
+  }, [searchParams, activeTab]);
+
+  // Update URL when tab changes
+  const handleTabChange = (tab: Tab) => {
+    setActiveTab(tab);
+    // Use replace to avoid building up history stack for tab changes
+    router.replace(`/agent/calls/${callId}?tab=${tab}`, { scroll: false });
+  };
+
+  useEffect(() => {
+    const fetchCallData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const token = localStorage.getItem('agent-token');
+        if (!token) throw new Error("No authentication token found");
+
+        const callsRes = await fetch(`${baseURL}/calls/my-calls`, {
+           headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        // This is a workaround since we don't have a direct single-call endpoint confirmed.
+        // We fetch the list and find the relevant call.
+        let foundCall: Call | null = null;
+
+        if (callsRes.ok) {
+            const data = await callsRes.json();
+            // Match against either _id or callId (UUID)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const rawCall = data.calls.find((c: any) => c.callId === callId || c._id === callId);
+            
+            if (rawCall) {
+                 const startTime = new Date(rawCall.startTime);
+                 const durationInSeconds = rawCall.duration || 0;
+                 const minutes = Math.floor(durationInSeconds / 60);
+                 const seconds = durationInSeconds % 60;
+                 
+                 foundCall = {
+                    id: rawCall._id,
+                    callId: rawCall.callId,
+                    date: startTime.toLocaleDateString('en-CA'),
+                    time: startTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    customer: {
+                        name: rawCall.customer?.name || 'Unknown Customer',
+                        email: rawCall.customer?.email || 'No email',
+                        phone: rawCall.customer?.phone || 'N/A'
+                    },
+                    duration: `${minutes}m ${seconds}s`,
+                    status: (rawCall.status.charAt(0).toUpperCase() + rawCall.status.slice(1)) as CallStatus,
+                    recordingUrl: rawCall.recordingUrl,
+                    agent: rawCall.agent
+                 };
+            }
+        }
+
+        if (!foundCall) {
+            throw new Error("Call not found.");
+        }
+
+        setCall(foundCall);
+
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (callId) {
+        fetchCallData();
+    }
+  }, [callId]);
+
+  if (loading) {
+    return (
+        <div className="flex bg-gray-50 h-screen items-center justify-center">
+            <div className="flex flex-col items-center">
+                <Loader className="w-10 h-10 animate-spin text-indigo-600 mb-4" />
+                <p className="text-gray-600 font-medium">Loading call details...</p>
+            </div>
+        </div>
+    );
+  }
+
+  if (error || !call) {
+     return (
+        <div className="flex bg-gray-50 h-screen items-center justify-center">
+             <div className="text-center p-8 bg-white rounded-xl shadow-lg border border-gray-100 max-w-md">
+                <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Call</h2>
+                <p className="text-gray-600 mb-6">{error || "Call not found"}</p>
+                <Link 
+                    href="/agent/calls" 
+                    className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition"
+                >
+                    <ChevronLeft size={20} className="mr-2" /> Back to Call History
+                </Link>
+             </div>
+        </div>
+     );
+  }
 
   return (
-    <div className="flex h-screen w-full bg-gray-100 font-sans">
-      <Sidebar isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarOpen ? "lg:ml-[250px]" : "lg:ml-[80px]"}`}>
-        <Header isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />
+    <div className="flex h-screen w-full bg-gray-50 font-sans flex-col">
         <main className="flex-1 overflow-y-auto p-6">
-          <Breadcrumb />
-          <CallHeaderCard />
-          <div className="mt-6">
-            <TabNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
+          <CallHeaderCard call={call} />
+          <div className="mt-8">
+            <TabNavigation activeTab={activeTab} setActiveTab={handleTabChange} />
             <div className="mt-6">
-              {activeTab === 'overview' && <OverviewTab />}
-              {activeTab === 'transcript' && <TranscriptTab />}
-              {activeTab === 'analysis' && <AnalysisTab />}
+              {activeTab === 'overview' && <OverviewTab call={call} />}
+              {activeTab === 'transcript' && <TranscriptTab callId={call.callId} />}
+              {activeTab === 'analysis' && <AnalysisTab callId={call.callId} />}
             </div>
           </div>
         </main>
-      </div>
     </div>
   );
-};
+}
 
-const Breadcrumb = () => (
-  <nav className="mb-4 text-sm text-gray-500" aria-label="Breadcrumb">
-    <ol className="list-none p-0 inline-flex">
-      <li className="flex items-center">
-        <Link href="/agent/dashboard" className="hover:text-indigo-600">Dashboard</Link>
-      </li>
-      <li className="flex items-center mx-2">
-        <ChevronRight size={16} />
-      </li>
-      <li className="flex items-center">
-        <Link href="/agent/calls" className="hover:text-indigo-600">Call History</Link>
-      </li>
-      <li className="flex items-center mx-2">
-        <ChevronRight size={16} />
-      </li>
-      <li className="text-gray-700 font-medium">Call #12345</li>
-    </ol>
-  </nav>
-);
+// --- Sub Components ---
 
-const CallHeaderCard = () => (
-  <div className="bg-white rounded-xl shadow-sm p-6 flex flex-col md:flex-row items-start md:items-center justify-between">
-    <div className="flex items-center gap-5">
-      <div className="w-20 h-20 rounded-full border-4 border-gray-100 bg-indigo-100 flex items-center justify-center">
-        <User size={40} className="text-indigo-600" />
+
+
+const CallHeaderCard = ({ call }: { call: Call }) => (
+  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
+    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-600"></div>
+    <div className="flex items-center gap-6 w-full md:w-auto">
+      <div className="w-20 h-20 rounded-full border-4 border-indigo-50 bg-indigo-100 flex items-center justify-center shrink-0">
+        <User size={36} className="text-indigo-600" />
       </div>
       <div>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-          <div className="font-semibold text-gray-500">Customer:</div>
-          <div className="text-gray-800 font-bold">John Doe</div>
-
-          <div className="font-semibold text-gray-500">Agent:</div>
-          <div className="text-gray-800 font-bold">Sarah Smith</div>
-
-          <div className="font-semibold text-gray-500">Duration:</div>
-          <div className="text-gray-800 font-bold">5m 32s</div>
-
-          <div className="font-semibold text-gray-500">Status:</div>
-          <div className="flex items-center gap-1">
-            <CheckCircle size={16} className="text-green-500" />
-            <span className="text-green-700 font-bold">Completed</span>
-          </div>
-
-          <div className="font-semibold text-gray-500">Date:</div>
-          <div className="text-gray-800 font-bold">Jan 15, 2024 10:30 AM</div>
+        <h1 className="text-2xl font-bold text-gray-900">{call.customer.name}</h1>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600 mt-2">
+            <div className="flex items-center gap-2">
+                <Mail size={16} className="text-gray-400" />
+                <span>{call.customer.email}</span>
+            </div>
+            {call.customer.phone && (
+                <div className="flex items-center gap-2">
+                    <Phone size={16} className="text-gray-400" />
+                    <span>{call.customer.phone}</span>
+                </div>
+            )}
+            <div className="flex items-center gap-2">
+                <Calendar size={16} className="text-gray-400" />
+                <span>{call.date} • {call.time}</span>
+            </div>
         </div>
       </div>
     </div>
-    <div className="flex items-center gap-3 mt-4 md:mt-0">
-      <button className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-sm transition-colors">
-        <Download size={16} />
-        <span>Download</span>
-      </button>
-      <button className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-sm transition-colors">
-        <Share2 size={16} />
-        <span>Share</span>
-      </button>
+    
+    <div className="flex flex-col items-end gap-3 w-full md:w-auto">
+      <div className={`px-4 py-1.5 rounded-full text-sm font-semibold flex items-center gap-2 border ${
+          call.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-100' : 
+          call.status === 'Ongoing' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+          'bg-gray-50 text-gray-700 border-gray-100'
+      }`}>
+         {call.status === 'Completed' && <CheckCircle size={16} />}
+         {call.status === 'Ongoing' && <Loader size={16} className="animate-spin" />}
+         {call.status}
+      </div>
+      <div className="text-sm font-medium text-gray-500 flex items-center gap-2">
+         <Clock size={16} />
+         Duration: <span className="text-gray-900">{call.duration}</span>
+      </div>
     </div>
   </div>
 );
 
 const TabNavigation = ({ activeTab, setActiveTab }: { activeTab: Tab; setActiveTab: (tab: Tab) => void; }) => {
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'transcript', label: 'Transcript' },
-    { id: 'analysis', label: 'Analysis' },
+  const tabs: { id: Tab; label: string; icon: LucideIcon }[] = [
+    { id: 'overview', label: 'Overview', icon: File },
+    { id: 'transcript', label: 'Transcript', icon: FileText },
+    { id: 'analysis', label: 'Analysis', icon: BarChart3 },
   ];
 
   return (
     <div className="border-b border-gray-200">
       <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200
-              ${activeTab === tab.id
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 gap-2
+                ${activeTab === tab.id
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+            >
+              <Icon size={18} className={activeTab === tab.id ? "text-indigo-600" : "text-gray-400 group-hover:text-gray-500"} />
+              {tab.label}
+            </button>
+          );
+        })}
       </nav>
     </div>
   );
 };
 
-const OverviewTab = () => (
+const OverviewTab = ({ call }: { call: Call }) => (
   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
-      <MetadataGrid />
+    <div className="lg:col-span-2 space-y-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <File className="text-indigo-500" size={20} /> Call Information
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <InfoItem label="Call ID" value={call.callId} />
+                 <InfoItem label="Agent" value={call.agent?.name || "Unknown Agent"} />
+                 <InfoItem label="Date" value={call.date} />
+                 <InfoItem label="Time" value={call.time} />
+                 <InfoItem label="Duration" value={call.duration} />
+                 <InfoItem label="Status" value={call.status} highlight={call.status === "Completed"} />
+            </div>
+        </div>
     </div>
-    <div className="lg:col-span-3">
-      <RecordingPlayerCard />
+    <div className="lg:col-span-1">
+       {call.recordingUrl ? (
+           <RecordingPlayerCard url={call.recordingUrl} />
+       ) : (
+           <div className="bg-gray-50 border border-gray-200 rounded-xl p-8 flex flex-col items-center justify-center text-center h-full">
+               <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mb-4">
+                  <Mic size={32} className="text-gray-400" />
+               </div>
+               <h3 className="text-lg font-medium text-gray-900">No Recording</h3>
+               <p className="text-gray-500 mt-2 text-sm">A recording is not available for this call.</p>
+           </div>
+       )}
     </div>
   </div>
 );
 
-const MetadataGrid = () => {
-  const items = [
-    { label: 'Call ID', value: '#12345' },
-    { label: 'Duration', value: '5m 32s' },
-    { label: 'Start Time', value: '10:30 AM' },
-    { label: 'End Time', value: '10:35 AM' },
-    { label: 'Customer Email', value: 'john@example.com' },
-    { label: 'Customer Phone', value: '+1-555-1234' },
-  ];
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm p-6 col-span-2">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {items.map(item => (
-                <div key={item.label}>
-                    <p className="text-sm text-gray-500">{item.label}</p>
-                    <p className="text-base font-bold text-gray-800 mt-1">{item.value}</p>
-                </div>
-            ))}
-        </div>
-    </div>
-  );
-};
-
-const RecordingPlayerCard = () => {
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [progress, setProgress] = useState(40); // Example progress
-    const [volume, setVolume] = useState(75);
-    const [playbackSpeed, setPlaybackSpeed] = useState(1);
-
-    return (
-        <div className="bg-white rounded-xl shadow-sm p-6">
-            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                🎙️ Call Recording
-            </h3>
-            <div className="mt-4 flex items-center gap-4">
-                <button onClick={() => setIsPlaying(!isPlaying)} className="p-3 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">
-                    {isPlaying ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
-                </button>
-                <div className="flex-grow flex items-center gap-3">
-                    <span className="text-sm font-mono text-gray-600">2:15</span>
-                    <div className="w-full bg-gray-200 rounded-full h-2 group">
-                        <div className="bg-indigo-500 h-2 rounded-full relative" style={{ width: `${progress}%` }}>
-                            <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-4 h-4 bg-white border-2 border-indigo-500 rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                        </div>
-                    </div>
-                    <span className="text-sm font-mono text-gray-600">5:32</span>
-                </div>
-            </div>
-            <div className="mt-4 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <div className="relative group">
-                        <button className="text-sm font-semibold text-gray-700 bg-gray-100 h-9 px-3 rounded-lg flex items-center gap-1">
-                            {playbackSpeed}x <ChevronDown size={16} />
-                        </button>
-                        <div className="absolute bottom-full mb-2 w-24 bg-white rounded-lg shadow-lg p-1 hidden group-hover:block">
-                            {[1, 1.5, 2].map(speed => (
-                                <button key={speed} onClick={() => setPlaybackSpeed(speed)} className="w-full text-left text-sm px-3 py-1.5 rounded-md hover:bg-gray-100">{speed}x</button>
-                            ))}
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2 group">
-                        <Volume2 size={20} className="text-gray-500" />
-                        <input type="range" min="0" max="100" value={volume} onChange={e => setVolume(Number(e.target.value))} className="w-24 h-1 accent-indigo-500" />
-                    </div>
-                </div>
-                <button className="flex items-center justify-center gap-2 h-9 px-4 rounded-lg text-indigo-600 font-semibold text-sm transition-colors hover:bg-indigo-50">
-                    <Download size={16} />
-                    <span>Download</span>
-                </button>
-            </div>
-        </div>
-    );
-};
-
-const TranscriptTab = () => {
-    const transcript = [
-        { speaker: 'Agent', time: '00:05', text: 'Hello, thank you for calling. My name is Sarah. How can I help you today?', avatar: '👨‍💼' },
-        { speaker: 'Customer', time: '00:12', text: 'Hi Sarah, I have a question about my recent bill. It seems higher than usual.', avatar: '👤' },
-        { speaker: 'Agent', time: '00:18', text: 'I can certainly look into that for you. Could you please provide me with your account number?', avatar: '👨‍💼' },
-        { speaker: 'Customer', time: '00:25', text: 'Sure, it\'s 555-1234. I also noticed my payment method seems to have expired.', avatar: '👤' },
-        { speaker: 'Agent', time: '00:32', text: 'Thank you. Yes, I see the issue. The system tried to process the payment with an expired card. We can update that for you right now.', avatar: '👨‍💼' },
-    ];
-
-    return (
-        <div className="bg-white rounded-xl shadow-sm">
-            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-                <h3 className="text-lg font-bold text-gray-800">Conversation Transcript</h3>
-                <div className="flex items-center gap-2">
-                    <button className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"><SearchIcon size={18} /></button>
-                    <button className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"><Copy size={18} /></button>
-                    <button className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"><FileText size={18} /></button>
-                    <button className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"><File size={18} /></button>
-                </div>
-            </div>
-            <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
-                {transcript.map((entry, index) => (
-                    <div key={index} className={`flex flex-col ${entry.speaker === 'Customer' ? 'items-end' : 'items-start'}`}>
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs text-gray-400">{entry.avatar} {entry.speaker}</span>
-                            <span className="text-xs text-gray-400">[{entry.time}]</span>
-                        </div>
-                        <div className={`max-w-[70%] p-4 rounded-xl ${entry.speaker === 'Customer' ? 'bg-gray-100 text-gray-800 rounded-br-none' : 'bg-indigo-50 text-indigo-900 rounded-bl-none'}`}>
-                            <p className="text-sm">{entry.text}</p>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
-
-const AnalysisTab = () => {
-    const analysisSections = [
-        { title: "Summary", icon: "1️⃣", component: <SummaryCard /> },
-        { title: "Sentiment Analysis", icon: "2️⃣", component: <SentimentCard /> },
-        { title: "Topics & Categories", icon: "3️⃣", component: <TopicsCard /> },
-        { title: "Action Items", icon: "4️⃣", component: <ActionItemsCard /> },
-        { title: "Issues", icon: "5️⃣", component: <IssuesCard /> },
-        { title: "Agent Performance", icon: "6️⃣", component: <AgentPerformanceCard /> },
-        { title: "Customer Experience", icon: "7️⃣", component: <CustomerExperienceCard /> },
-        { title: "Compliance", icon: "8️⃣", component: <ComplianceCard /> },
-        { title: "Business Insights", icon: "9️⃣", component: <BusinessInsightsCard /> },
-        { title: "Recommendations", icon: "🔟", component: <RecommendationsCard /> },
-    ];
-
-    return (
-        <div className="space-y-4">
-            <RiskAssessmentCard />
-            {analysisSections.map(section => (
-                <AccordionCard key={section.title} title={section.title} icon={section.icon}>
-                    {section.component}
-                </AccordionCard>
-            ))}
-        </div>
-    );
-};
-
-const AccordionCard = ({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) => {
-    const [isOpen, setIsOpen] = useState(true);
-    return (
-        <div className="bg-white rounded-xl shadow-sm transition-shadow hover:shadow-md">
-            <button onClick={() => setIsOpen(!isOpen)} className="w-full flex justify-between items-center p-5 text-left">
-                <h3 className="text-base font-bold text-gray-800 flex items-center gap-3">
-                    <span>{icon}</span>
-                    {title}
-                </h3>
-                <ChevronDown size={20} className={`text-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
-            <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-h-[1000px]' : 'max-h-0'}`}>
-                <div className="px-5 pb-5 border-t border-gray-200 pt-4">
-                    {children}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const SummaryCard = () => (
+const InfoItem = ({ label, value, highlight = false }: { label: string, value: string, highlight?: boolean }) => (
     <div>
-        <h4 className="font-semibold text-gray-700">📝 Brief Summary:</h4>
-        <p className="text-sm text-gray-600 mt-1">Customer inquired about a higher-than-expected bill, which was caused by a failed payment from an expired credit card. The agent helped the customer update their payment method and resolved the issue.</p>
-        <h4 className="font-semibold text-gray-700 mt-4">🔑 Key Points:</h4>
-        <ul className="list-disc list-inside text-sm text-gray-600 mt-1 space-y-1">
-            <li>Payment method issue identified.</li>
-            <li>Account payment information update required.</li>
-            <li>Issue was resolved successfully during the call.</li>
-        </ul>
-        <div className="mt-4 flex items-center gap-2">
-            <h4 className="font-semibold text-gray-700">✅ Outcome:</h4>
-            <span className="px-2.5 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-800">Resolved</span>
-        </div>
+        <dt className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">{label}</dt>
+        <dd className={`text-base font-semibold ${highlight ? 'text-green-600' : 'text-gray-900'} break-words`}>{value}</dd>
     </div>
 );
 
-const SentimentCard = () => (
-    <div className="space-y-4">
-        <div className="flex items-center gap-4">
-            <div className="font-semibold text-gray-700">Overall:</div>
-            <span className="flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-800">😊 Positive</span>
-        </div>
-        {/* Mock Chart */}
-        <div>
-            <h4 className="font-semibold text-gray-700 text-sm mb-2">📈 Sentiment Timeline:</h4>
-            <div className="w-full h-24 bg-gray-50 rounded-lg flex items-end justify-center p-2 border border-gray-200">
-                <p className="text-xs text-gray-400">[Line Chart showing sentiment over time]</p>
+const RecordingPlayerCard = ({ url }: { url: string }) => {
+    // Note: For a real app, integrate a proper audio player.
+    // This is a simplified UI control concept.
+    return (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
+                <Mic size={20} className="text-indigo-500" /> Recording
+            </h3>
+            <audio controls src={url} className="w-full mb-4 rounded-lg" />
+            <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-500">Download Audio</span>
+                <a href={url} download className="p-2 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors">
+                    <Download size={20} />
+                </a>
             </div>
         </div>
-        <div>
-            <h4 className="font-semibold text-gray-700 text-sm mb-2">📊 Scores:</h4>
-            <div className="space-y-2 text-sm">
-                <ProgressBar label="Overall" value={70} />
-                <ProgressBar label="Customer" value={60} />
-                <ProgressBar label="Agent" value={90} />
-            </div>
-        </div>
-    </div>
-);
-
-const ProgressBar = ({ label, value }: { label: string; value: number }) => (
-    <div className="flex items-center gap-3">
-        <span className="w-24 text-gray-600">{label}</span>
-        <div className="flex-grow bg-gray-200 rounded-full h-2.5">
-            <div className="bg-gradient-to-r from-blue-400 to-indigo-500 h-2.5 rounded-full" style={{ width: `${value}%` }}></div>
-        </div>
-        <span className="w-10 font-mono text-gray-800">{(value / 100).toFixed(1)}</span>
-    </div>
-);
-
-const TopicsCard = () => (
-    <div className="space-y-4">
-        <div>
-            <h4 className="font-semibold text-gray-700">🎯 Main Topic:</h4>
-            <div className="mt-2"><span className="px-4 py-1.5 text-sm font-bold rounded-full bg-blue-100 text-blue-800">Billing Support</span></div>
-        </div>
-        <div>
-            <h4 className="font-semibold text-gray-700">📌 Sub-topics:</h4>
-            <div className="mt-2 flex flex-wrap gap-2">
-                <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-gray-200 text-gray-800">Payment Issue</span>
-                <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-gray-200 text-gray-800">Account Update</span>
-            </div>
-        </div>
-        <div>
-            <h4 className="font-semibold text-gray-700">🏢 Department:</h4>
-            <p className="text-sm text-gray-600 mt-1">Customer Support</p>
-        </div>
-        <div>
-            <h4 className="font-semibold text-gray-700">🏷️ Tags:</h4>
-            <p className="text-sm text-indigo-700 mt-1">#billing #payment #support</p>
-        </div>
-    </div>
-);
-
-const ActionItemsCard = () => (
-    <div className="space-y-4">
-        <div>
-            <h4 className="font-semibold text-gray-700">👤 Customer Tasks:</h4>
-            <div className="text-sm text-gray-600 mt-2 p-3 bg-gray-50 rounded-lg border">
-                <div className="flex items-start gap-3">
-                    <input type="checkbox" className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                    <div>
-                        <p>Update payment method</p>
-                        <p className="text-xs text-gray-500">Deadline: Within 24 hours | Priority: <span className="text-red-600 font-semibold">🔴 High</span></p>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div>
-            <h4 className="font-semibold text-gray-700">👨‍💼 Agent Follow-ups:</h4>
-            <div className="text-sm text-gray-600 mt-2 p-3 bg-gray-50 rounded-lg border">
-                 <div className="flex items-start gap-3">
-                    <input type="checkbox" className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                    <div>
-                        <p>Send confirmation email</p>
-                        <p className="text-xs text-gray-500">Status: <span className="font-semibold">Pending</span></p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-);
-
-const IssuesCard = () => (
-    <div className="space-y-4 text-sm">
-        <div>
-            <h4 className="font-semibold text-gray-700">⚠️ Primary Issue:</h4>
-            <p className="text-base font-bold text-gray-800 mt-1">Failed payment processing</p>
-        </div>
-        <div>
-            <h4 className="font-semibold text-gray-700">Secondary Issues:</h4>
-            <ul className="list-disc list-inside text-gray-600 mt-1">
-                <li>Expired credit card</li>
-                <li>No backup payment method</li>
-            </ul>
-        </div>
-        <div>
-            <h4 className="font-semibold text-gray-700">🔍 Root Cause:</h4>
-            <p className="text-gray-600 mt-1">Credit card expired last month.</p>
-        </div>
-        <div className="grid grid-cols-3 gap-4 pt-2">
-            <div><h4 className="font-semibold text-gray-700">Severity:</h4><p className="text-gray-600 mt-1">🟡 Medium</p></div>
-            <div><h4 className="font-semibold text-gray-700">Status:</h4><p className="text-gray-600 mt-1">✅ Resolved</p></div>
-            <div><h4 className="font-semibold text-gray-700">Resolution Time:</h4><p className="text-gray-600 mt-1">5m 32s</p></div>
-        </div>
-    </div>
-);
-
-const AgentPerformanceCard = () => (
-    <div className="space-y-5">
-        <div className="flex items-center gap-6">
-            <div className="relative w-24 h-24">
-                <svg className="w-full h-full" viewBox="0 0 36 36">
-                    <path className="stroke-gray-200" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" strokeWidth="3"></path>
-                    <path className="stroke-indigo-500" strokeDasharray="85, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" strokeWidth="3" strokeLinecap="round"></path>
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-2xl font-bold text-gray-800">8.5</span>
-                    <span className="text-xs text-gray-500">/ 10</span>
-                </div>
-            </div>
-            <div className="flex-grow space-y-2 text-sm">
-                <ProgressBar label="Communication" value={90} />
-                <ProgressBar label="Empathy" value={87} />
-                <ProgressBar label="Problem Solving" value={82} />
-            </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>
-                <h4 className="font-semibold text-gray-700 mb-1">✅ Strengths:</h4>
-                <ul className="list-disc list-inside text-gray-600 space-y-1">
-                    <li>Clear communication</li>
-                    <li>Patient approach</li>
-                </ul>
-            </div>
-            <div>
-                <h4 className="font-semibold text-gray-700 mb-1">⚠️ Areas for Improvement:</h4>
-                <ul className="list-disc list-inside text-gray-600 space-y-1">
-                    <li>Could offer more alternatives</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-);
-
-const CustomerExperienceCard = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
-        <div>
-            <h4 className="font-semibold text-gray-700 mb-1">😊 Satisfaction Indicators:</h4>
-            <ul className="list-disc list-inside text-gray-600 space-y-1">
-                <li>Thanked agent multiple times</li>
-                <li>Positive tone throughout</li>
-            </ul>
-        </div>
-        <div>
-            <h4 className="font-semibold text-gray-700 mb-1">😟 Pain Points:</h4>
-            <ul className="list-disc list-inside text-gray-600 space-y-1">
-                <li>Had to call multiple times previously</li>
-                <li>Confusion about process</li>
-            </ul>
-        </div>
-        <div className="md:col-span-2 grid grid-cols-2 gap-4 pt-2 border-t">
-            <div><h4 className="font-semibold text-gray-700">Effort Level:</h4><p className="text-gray-600 mt-1">✅ Easy</p></div>
-            <div><h4 className="font-semibold text-gray-700">Repeat Call:</h4><p className="text-gray-600 mt-1">⚠️ Yes (3rd attempt)</p></div>
-        </div>
-    </div>
-);
-
-const ComplianceCard = () => (
-    <div className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
-        <div className="flex items-center gap-2"><CheckCircle size={16} className="text-green-500" /> Greeting Quality: Proper</div>
-        <div className="flex items-center gap-2"><CheckCircle size={16} className="text-green-500" /> Closing Quality: Proper</div>
-        <div className="flex items-center gap-2"><CheckCircle size={16} className="text-green-500" /> Policy Adherence: Yes</div>
-        <div className="flex items-center gap-2"><CheckCircle size={16} className="text-green-500" /> Data Security: Followed</div>
-        <div className="col-span-2 pt-2 border-t">
-            <h4 className="font-semibold text-gray-700 mb-1">⚠️ Violations:</h4>
-            <p className="text-gray-600">None</p>
-        </div>
-    </div>
-);
-
-const BusinessInsightsCard = () => (
-    <div className="space-y-4 text-sm">
-        <div>
-            <h4 className="font-semibold text-gray-700">💡 Feature Requests:</h4>
-            <div className="text-gray-600 mt-1 p-3 bg-gray-50 rounded-lg border flex justify-between items-center">
-                <ul className="list-disc list-inside">
-                    <li>Auto-update payment methods</li>
-                    <li>Card expiry notifications</li>
-                </ul>
-                <button className="text-indigo-600 font-semibold flex items-center gap-1 text-xs">Forward <ArrowRight size={14} /></button>
-            </div>
-        </div>
-        <div>
-            <h4 className="font-semibold text-gray-700">📝 Product Feedback:</h4>
-            <p className="text-gray-600 mt-1">Payment system needs improvement for proactive reminders.</p>
-        </div>
-    </div>
-);
-
-const RecommendationsCard = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
-        <div>
-            <h4 className="font-semibold text-gray-700 mb-1">👨‍💼 For Agent:</h4>
-            <ul className="list-disc list-inside text-gray-600 space-y-1">
-                <li>Excellent work on resolution</li>
-                <li>Continue patient approach</li>
-            </ul>
-        </div>
-        <div>
-            <h4 className="font-semibold text-gray-700 mb-1">👔 For Manager:</h4>
-            <ul className="list-disc list-inside text-gray-600 space-y-1">
-                <li>Share as best practice example</li>
-            </ul>
-        </div>
-        <div className="md:col-span-2 pt-4 border-t">
-            <h4 className="font-semibold text-gray-700 mb-1">🎯 For Product Team:</h4>
-            <ul className="list-disc list-inside text-gray-600 space-y-1">
-                <li>Implement payment reminder feature</li>
-            </ul>
-        </div>
-    </div>
-);
-
-const RiskAssessmentCard = () => (
-    <div className="bg-white rounded-xl shadow-sm p-5">
-        <h3 className="text-base font-bold text-gray-800 flex items-center gap-3 mb-3">
-            <Flag size={20} className="text-red-500" />
-            Risk Assessment
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-                <p className="font-semibold text-gray-500">Churn Risk</p>
-                <p className="font-bold text-green-700 mt-1">🟢 Low</p>
-            </div>
-            <div>
-                <p className="font-semibold text-gray-500">Escalation</p>
-                <p className="font-bold text-gray-800 mt-1">❌ No</p>
-            </div>
-            <div>
-                <p className="font-semibold text-gray-500">Legal Risk</p>
-                <p className="font-bold text-gray-800 mt-1">❌ No</p>
-            </div>
-            <div>
-                <p className="font-semibold text-gray-500">VIP Customer</p>
-                <p className="font-bold text-gray-800 mt-1">❌ No</p>
-            </div>
-        </div>
-    </div>
-);
-
-
-// NOTE: Simplified Sidebar and Header components for brevity.
-// These would be the same as in other agent pages.
-
-const Sidebar = ({ isSidebarOpen, setIsSidebarOpen }: { isSidebarOpen: boolean; setIsSidebarOpen: (isOpen: boolean) => void; }) => {
-  const navItems = [
-    { icon: LayoutDashboard, label: "Dashboard", href: "/agent/dashboard" },
-    { icon: Phone, label: "Call History", href: "/agent/calls" },
-    { icon: BarChart3, label: "Analytics", href: "#" },
-    { icon: Target, label: "Performance", href: "#" },
-    { icon: Settings, label: "Settings", href: "#" },
-  ];
-
-  return (
-    <>
-      <div className={`fixed top-0 left-0 h-full bg-[#1F2937] text-white transition-all duration-300 z-30 ${isSidebarOpen ? "w-[250px]" : "w-0 lg:w-[80px]"} overflow-hidden`}>
-        <div className="flex flex-col h-full">
-          <div className={`flex items-center gap-3 px-6 h-[70px] border-b border-gray-700 ${!isSidebarOpen && "lg:justify-center"}`}>
-            <Phone className="h-10 w-10 text-indigo-400" />
-            <span className={`text-xl font-bold ${!isSidebarOpen && "lg:hidden"}`}>Call Center</span>
-          </div>
-          <div className={`px-6 py-4 border-b border-gray-700 ${!isSidebarOpen && "lg:px-0"}`}>
-            <div className={`flex items-center gap-3 ${!isSidebarOpen && "lg:flex-col lg:gap-2 lg:justify-center"}`}>
-              <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center">
-                <User size={28} className="text-indigo-600" />
-              </div>
-              <div className={`${!isSidebarOpen && "lg:hidden"}`}>
-                <p className="font-semibold text-base">Sarah Smith</p>
-                <div className="flex items-center gap-2 text-sm text-gray-300">
-                  <span className={`h-2 w-2 rounded-full bg-green-500`}></span>
-                  Online
-                </div>
-              </div>
-            </div>
-          </div>
-          <nav className="flex-1 py-4">
-            <ul>
-              {navItems.map((item) => (
-                <li key={item.label} className="px-6 relative">
-                  <Link href={item.href} className={`flex items-center gap-4 h-12 rounded-lg px-4 transition-colors ${item.label === 'Call History' ? "bg-gray-700/50 text-white" : "text-gray-400 hover:bg-gray-700/30 hover:text-white"} ${!isSidebarOpen && "lg:justify-center"}`}>
-                    <item.icon size={20} />
-                    <span className={`${!isSidebarOpen && "lg:hidden"}`}>{item.label}</span>
-                    {item.label === 'Call History' && <div className="absolute left-0 h-8 w-1 bg-blue-500 rounded-r-full"></div>}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-          <div className="px-6 py-4 border-t border-gray-700">
-            <a href="#" className={`flex items-center gap-4 h-12 rounded-lg px-4 text-red-400 hover:bg-red-900/30 hover:text-red-300 ${!isSidebarOpen && "lg:justify-center"}`}>
-              <LogOut size={20} />
-              <span className={`${!isSidebarOpen && "lg:hidden"}`}>Logout</span>
-            </a>
-          </div>
-        </div>
-      </div>
-      {isSidebarOpen && <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-black/50 z-20 lg:hidden"></div>}
-    </>
-  );
+    );
 };
 
-const Header = ({ isSidebarOpen, setIsSidebarOpen }: { isSidebarOpen: boolean; setIsSidebarOpen: (isOpen: boolean) => void; }) => {
-  return (
-    <header className="flex h-[70px] items-center justify-between border-b bg-white px-6 sticky top-0 z-10">
-      <div className="flex items-center gap-4">
-        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden">
-          {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
-        <h1 className="text-2xl font-bold text-gray-800 hidden lg:block">Agent Portal</h1>
-      </div>
-      <div className="flex items-center gap-4">
-        <div className="relative hidden md:block">
-          <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" placeholder="Search..." className="h-10 w-64 rounded-lg border border-gray-300 bg-gray-50 pl-10 pr-4 text-sm" />
+const TranscriptTab = ({ callId }: { callId: string }) => {
+    const [transcription, setTranscription] = useState<Transcription | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchTranscription = async () => {
+            setLoading(true);
+            try {
+                const token = localStorage.getItem('agent-token');
+                if (!token) throw new Error("No auth token");
+                
+                const res = await fetch(`${baseURL}/transcriptions/${callId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!res.ok) {
+                    if (res.status === 404) {
+                         setError("No transcription available yet.");
+                         return;
+                    }
+                    throw new Error("Failed to fetch transcript");
+                }
+                
+                const data = await res.json();
+                setTranscription(data.transcription);
+            } catch (err) {
+                setError((err as Error).message);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchTranscription();
+    }, [callId]);
+
+    const formatTime = (seconds?: number) => {
+        if (seconds === undefined) return "0:00";
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    if (loading) return <div className="p-12 text-center text-gray-500"><Loader className="w-8 h-8 animate-spin mx-auto mb-2" /> Loading transcript...</div>;
+    
+    if (error) return (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
+             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <FileText size={32} className="text-gray-400" />
+             </div>
+             <h3 className="text-lg font-medium text-gray-900">{error}</h3>
+             <p className="text-gray-500 mt-2">The transcription might still be processing.</p>
         </div>
-        <button className="relative rounded-full p-2 hover:bg-gray-100">
-          <Bell size={24} className="text-gray-600" />
-          <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500"></span>
-        </button>
-        <div className="h-8 w-px bg-gray-200"></div>
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
-            <User size={24} className="text-indigo-600" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold">Sarah Smith</p>
-            <p className="text-xs text-gray-500">Agent</p>
-          </div>
-          <ChevronDown size={16} className="text-gray-500" />
+    );
+
+    if (!transcription) return null;
+
+    const messages = transcription.conversation || transcription.segments || [];
+
+    return (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-320px)] min-h-[500px]">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 rounded-t-xl">
+                 <h3 className="font-semibold text-gray-700">Conversation</h3>
+                 <div className="flex gap-2">
+                     <button className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-colors" title="Copy Text">
+                         <Copy size={18} />
+                     </button>
+                     <button className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-colors" title="Download">
+                         <Download size={18} />
+                     </button>
+                 </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {messages.length > 0 ? (
+                    messages.map((msg, idx) => {
+                        const isAgent = msg.speaker.toLowerCase() === 'agent';
+                        const startTime = msg.start ?? msg.startTime;
+                        return (
+                             <div key={idx} className={`flex gap-4 ${isAgent ? 'flex-row-reverse' : ''}`}>
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isAgent ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-600'}`}>
+                                    {isAgent ? <User size={20} /> : <User size={20} />}
+                                </div>
+                                <div className={`max-w-[75%] space-y-1`}>
+                                    <div className={`flex items-center gap-2 text-xs text-gray-500 ${isAgent ? 'justify-end' : ''}`}>
+                                        <span className="font-semibold">{msg.speaker}</span>
+                                        <span>•</span>
+                                        <span className="font-mono">{formatTime(startTime)}</span>
+                                    </div>
+                                    <div className={`p-4 rounded-2xl text-sm leading-relaxed ${isAgent ? 'bg-indigo-600 text-white rounded-tr-none shadow-md' : 'bg-white border border-gray-100 text-gray-700 rounded-tl-none shadow-sm'}`}>
+                                        {msg.text}
+                                    </div>
+                                </div>
+                             </div>
+                        );
+                    })
+                ) : (
+                    <div className="p-8 bg-gray-50 rounded-lg text-gray-600 whitespace-pre-wrap font-mono text-sm leading-relaxed">
+                        {transcription.fullText || "No text content available."}
+                    </div>
+                )}
+            </div>
         </div>
-      </div>
-    </header>
-  );
+    );
 };
 
-export default CallDetailPage;
+const AnalysisTab = ({ callId }: { callId: string }) => {
+    const [analysis, setAnalysis] = useState<CallAnalysis | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchAnalysis = async () => {
+             setLoading(true);
+             try {
+                const token = localStorage.getItem('agent-token');
+                if (!token) throw new Error("No auth token");
+                
+                const res = await fetch(`${baseURL}/analysis/${callId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!res.ok) {
+                    if (res.status === 404) {
+                        setError("Analysis not available yet.");
+                        return;
+                    }
+                    throw new Error("Failed to fetch analysis");
+                }
+                
+                const data = await res.json();
+                setAnalysis(data.analysis);
+             } catch (err) {
+                 setError((err as Error).message);
+             } finally {
+                 setLoading(false);
+             }
+        };
+        fetchAnalysis();
+    }, [callId]);
+
+    const getSentimentColor = (sentiment?: string) => {
+        const s = sentiment?.toLowerCase() || '';
+        if (s.includes('positive')) return 'bg-green-100 text-green-800 border-green-200';
+        if (s.includes('negative')) return 'bg-red-100 text-red-800 border-red-200';
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    };
+
+    if (loading) return <div className="p-12 text-center text-gray-500"><Loader className="w-8 h-8 animate-spin mx-auto mb-2" /> Loading insights...</div>;
+    
+    if (error) return (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
+             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <BarChart3 size={32} className="text-gray-400" />
+             </div>
+             <h3 className="text-lg font-medium text-gray-900">{error}</h3>
+             <p className="text-gray-500 mt-2">Analysis usually takes a few minutes after the call ends.</p>
+        </div>
+    );
+
+    if (!analysis) return null;
+
+    return (
+        <div className="space-y-6 animate-in fade-in duration-500">
+             {/* Key Metrics */}
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                     <h4 className="text-sm font-medium text-gray-500 mb-2">Overall Sentiment</h4>
+                     <div className="flex items-center gap-3">
+                         <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase border ${getSentimentColor(analysis.sentiment?.overall)}`}>
+                             {analysis.sentiment?.overall || 'Neutral'}
+                         </div>
+                         {analysis.sentiment?.scores?.overall && (
+                             <span className="text-2xl font-bold text-gray-900">{Math.round(analysis.sentiment.scores.overall * 100)}%</span>
+                         )}
+                     </div>
+                     {/* Bars */}
+                     <div className="mt-4 space-y-2">
+                        <SentimentBar label="Customer" value={analysis.sentiment?.scores?.customer} />
+                        <SentimentBar label="Agent" value={analysis.sentiment?.scores?.agent} />
+                     </div>
+                 </div>
+
+                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                     <h4 className="text-sm font-medium text-gray-500 mb-2">Agent Score</h4>
+                     <div className="flex items-center gap-3">
+                         <span className="text-4xl font-bold text-indigo-600">{analysis.agentPerformance?.scores?.overall ?? '-'}</span>
+                         <span className="text-sm text-gray-400 self-end mb-1">/ 10</span>
+                     </div>
+                     <div className="mt-4 flex flex-wrap gap-2">
+                         {(analysis.agentPerformance?.strengths || []).slice(0, 2).map((s, i) => (
+                             <span key={i} className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded-md border border-green-100">
+                                 ✅ {s}
+                             </span>
+                         ))}
+                     </div>
+                 </div>
+
+                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                     <h4 className="text-sm font-medium text-gray-500 mb-2">Resolution Status</h4>
+                     <div className="flex items-center gap-2 mb-2">
+                         <span className="text-lg font-semibold text-gray-900 capitalize">{analysis.issues?.status || 'Unknown'}</span>
+                     </div>
+                     <p className="text-sm text-gray-600 line-clamp-2">{analysis.summary?.outcome}</p>
+                 </div>
+             </div>
+
+             {/* Summary & Topics */}
+             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                     <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><FileText size={18} className="text-indigo-500"/> Executive Summary</h3>
+                     <p className="text-gray-700 leading-relaxed text-sm mb-4">{analysis.summary?.brief}</p>
+                     
+                     <h4 className="font-semibold text-gray-800 text-sm mb-2">Key Points</h4>
+                     <ul className="space-y-2">
+                         {(analysis.summary?.keyPoints || []).map((point, i) => (
+                             <li key={i} className="flex gap-2 text-sm text-gray-600">
+                                 <div className="min-w-1.5 h-1.5 rounded-full bg-indigo-400 mt-2"></div>
+                                 {point}
+                             </li>
+                         ))}
+                     </ul>
+                 </div>
+
+                 <div className="space-y-6">
+                      {/* Topics */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                          <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Flag size={18} className="text-orange-500"/> Topics</h3>
+                          <div className="flex flex-wrap gap-2 mb-4">
+                              <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-sm font-medium border border-indigo-100">
+                                  {analysis.topics?.main}
+                              </span>
+                              {(analysis.topics?.tags || []).map((tag, i) => (
+                                  <span key={i} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-full text-sm border border-gray-100">
+                                      #{tag}
+                                  </span>
+                              ))}
+                          </div>
+                      </div>
+
+                      {/* Action Items */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                          <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><CheckCircle size={18} className="text-green-500"/> Action Items</h3>
+                          {analysis.actionItems?.customerTasks?.length > 0 && (
+                              <div className="mb-4">
+                                  <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Customer Tasks</h5>
+                                  <ul className="space-y-2">
+                                      {analysis.actionItems.customerTasks.map((task, i) => (
+                                          <li key={i} className="flex gap-2 text-sm text-gray-700 bg-gray-50 p-2 rounded-lg">
+                                              <input type="checkbox" className="mt-0.5" disabled />
+                                              <span className="flex-1">{task.task}</span>
+                                              <span className="text-xs text-red-500 font-medium whitespace-nowrap">{task.priority} Priority</span>
+                                          </li>
+                                      ))}
+                                  </ul>
+                              </div>
+                          )}
+                          {analysis.actionItems?.agentFollowUps?.length > 0 && (
+                              <div>
+                                  <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Agent Follow-up</h5>
+                                  <ul className="space-y-2">
+                                      {analysis.actionItems.agentFollowUps.map((action, i) => (
+                                          <li key={i} className="flex gap-2 text-sm text-gray-700 bg-indigo-50 p-2 rounded-lg">
+                                              <input type="checkbox" className="mt-0.5" disabled />
+                                              <span>{action.action}</span>
+                                          </li>
+                                      ))}
+                                  </ul>
+                              </div>
+                          )}
+                           {!analysis.actionItems?.customerTasks?.length && !analysis.actionItems?.agentFollowUps?.length && (
+                               <p className="text-gray-400 text-sm italic">No specific action items detected.</p>
+                           )}
+                      </div>
+                 </div>
+             </div>
+        </div>
+    );
+};
+
+const SentimentBar = ({ label, value }: { label: string, value?: number }) => {
+    if (value === undefined) return null;
+    const percentage = Math.round(value * 100);
+    return (
+        <div className="flex items-center gap-2 text-xs">
+            <span className="w-16 text-gray-500">{label}</span>
+            <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div 
+                    className={`h-full rounded-full ${percentage > 60 ? 'bg-green-500' : percentage > 40 ? 'bg-yellow-500' : 'bg-red-500'}`} 
+                    style={{ width: `${percentage}%` }}
+                ></div>
+            </div>
+            <span className="w-8 text-right font-medium text-gray-700">{percentage}%</span>
+        </div>
+    );
+};
+
+// --- Sidebar & Header (Simplified) ---

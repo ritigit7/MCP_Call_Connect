@@ -63,7 +63,8 @@ const PerformancePage = () => {
       ]);
 
       const callsData = callsRes.ok ? await callsRes.json() : { calls: [] };
-      const metricsData = metricsRes && metricsRes.ok ? await metricsRes.json() : null;
+      const metricsResponse = metricsRes && metricsRes.ok ? await metricsRes.json() : null;
+      const metricsData = metricsResponse?.metrics || null;
 
       const calls = callsData.calls || [];
       const durations = calls.map((c: { duration: number }) => c.duration || 0);

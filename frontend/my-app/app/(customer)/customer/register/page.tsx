@@ -91,6 +91,12 @@ const CustomerRegisterPage = () => {
           throw new Error(errorData.error || 'Failed to register.');
         }
 
+        const data = await response.json();
+        
+        // Save customer data to localStorage so the Call Page uses this identity
+        // instead of auto-registering a new random customer.
+        localStorage.setItem("customer", JSON.stringify(data.customer));
+
         router.push('/customer/call');
       } catch (error) {
         setApiError((error as Error).message);

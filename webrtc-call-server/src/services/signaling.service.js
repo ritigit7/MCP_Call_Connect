@@ -212,15 +212,29 @@ class SignalingService {
     const callData = this.activeCalls.get(callId);
     if (!callData) return;
 
-    // Update call record
+    // First, get the call to retrieve startTime
+    const existingCall = await Call.findOne({ callId });
+    if (!existingCall) {
+      console.log(`❌ Call not found: ${callId}`);
+      return;
+    }
+
+    // Calculate duration in seconds
+    const endTime = new Date();
+    const duration = Math.floor((endTime - existingCall.startTime) / 1000);
+
+    // Update call record with endTime, status, and calculated duration
     const call = await Call.findOneAndUpdate(
       { callId },
       {
-        endTime: new Date(),
-        status: 'completed'
+        endTime,
+        status: 'completed',
+        duration
       },
       { new: true }
     );
+
+    console.log(`📊 Call duration calculated: ${duration}s for callId: ${callId}`);
 
     // Notify both parties
     this.io.to(callData.agentSocketId).emit('call:ended', { callId });

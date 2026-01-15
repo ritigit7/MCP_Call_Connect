@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { baseURL } from '@/lib/api';
 import {
@@ -16,8 +16,8 @@ interface AnalyticsData {
   overview: {
     totalCalls: { value: number; trend: number };
     avgDuration: { value: string; trend: number };
-    fcrRate: { value: string; trend: number };
-    satisfaction: { value: string; trend: number };
+    fcrRate: { value: string; trend: number; display: string };
+    satisfaction: { value: string; trend: number; display: string };
   };
   callsOverTime: { date: string; calls: number }[];
   sentimentDistribution: { name: string; value: number }[];
@@ -26,6 +26,12 @@ interface AnalyticsData {
   resolutionStatus: { name: string; value: number }[];
   callDurationDistribution: { range: string; count: number }[];
   satisfactionTrend: { date: string; score: number; movingAverage: number }[];
+}
+
+
+interface Topic {
+    topic: string;
+    count: number;
 }
 
 const SENTIMENT_COLORS = ['#22c55e', '#facc15', '#ef4444'];
@@ -91,7 +97,7 @@ const AnalyticsDashboard = () => {
   const getToken = () => localStorage.getItem('agent-token');
   const getAgentId = () => localStorage.getItem('agent-id');
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -117,7 +123,8 @@ const AnalyticsDashboard = () => {
 
       const callsData = await callsRes.json();
       const statsData = statsRes.ok ? await statsRes.json() : null;
-      const metricsData = metricsRes && metricsRes.ok ? await metricsRes.json() : null;
+      const metricsResponse = metricsRes && metricsRes.ok ? await metricsRes.json() : null;
+      const metricsData = metricsResponse?.metrics || null;
 
       // Process calls data for charts
       const calls = callsData.calls || [];
@@ -154,60 +161,73 @@ const AnalyticsDashboard = () => {
       // Build analytics data
       const data: AnalyticsData = {
         overview: {
-          totalCalls: { value: calls.length, trend: 12 },
+          totalCalls: { value: calls.length, trend: 12 }, // Trend calculation requires historical data, keeping placeholder for trend
           avgDuration: { value: `${avgMins}m ${avgSecs}s`, trend: -5 },
-          fcrRate: { value: metricsData?.fcrRate ? `${Math.round(metricsData.fcrRate)}%` : '85%', trend: 3 },
-          satisfaction: { value: metricsData?.avgScore ? `${metricsData.avgScore.toFixed(1)}/10` : '8.2/10', trend: 0.5 },
+          fcrRate: { 
+              value: metricsData?.fcrRate ? `${Math.round(metricsData.fcrRate * 100)}%` : '0%', 
+              trend: 3,
+              display: metricsData?.fcrRate ? `${Math.round(metricsData.fcrRate * 100)}%` : 'N/A'
+          },
+          satisfaction: { 
+              value: metricsData?.avgScore ? `${metricsData.avgScore.toFixed(1)}/10` : '0/10', 
+              trend: 0.5,
+              display: metricsData?.avgScore ? `${metricsData.avgScore.toFixed(1)}/10` : 'N/A'
+          },
         },
         callsOverTime,
         sentimentDistribution: [
-          { name: 'Positive', value: metricsData?.sentimentBreakdown?.positive || 60 },
-          { name: 'Neutral', value: metricsData?.sentimentBreakdown?.neutral || 30 },
-          { name: 'Negative', value: metricsData?.sentimentBreakdown?.negative || 10 },
-        ],
-        topicDistribution: [
-          { name: 'Billing', value: 45 },
-          { name: 'Tech Support', value: 30 },
-          { name: 'Sales', value: 20 },
-          { name: 'Other', value: 5 },
-        ],
+          { name: 'Positive', value: metricsData?.sentimentBreakdown?.positive || 0 },
+          { name: 'Neutral', value: metricsData?.sentimentBreakdown?.neutral || 0 },
+          { name: 'Negative', value: metricsData?.sentimentBreakdown?.negative || 0 },
+        ].filter(item => item.value > 0),
+        topicDistribution: metricsData?.commonTopics && metricsData.commonTopics.length > 0 
+          ? metricsData.commonTopics.map((t: Topic) => ({
+              name: t.topic,
+              value: t.count
+            })).slice(0, 5) 
+          : [],
         performanceRadar: [
-          { subject: 'Communication', A: metricsData?.scores?.communication || 8, fullMark: 10 },
-          { subject: 'Problem Solving', A: metricsData?.scores?.problemSolving || 9, fullMark: 10 },
-          { subject: 'Product Knowledge', A: metricsData?.scores?.productKnowledge || 7, fullMark: 10 },
-          { subject: 'Empathy', A: metricsData?.scores?.empathy || 8.5, fullMark: 10 },
+          { subject: 'Communication', A: metricsData?.scores?.communication || 0, fullMark: 10 },
+          { subject: 'Problem Solving', A: metricsData?.scores?.problemSolving || 0, fullMark: 10 },
+          { subject: 'Product Knowledge', A: metricsData?.scores?.productKnowledge || 0, fullMark: 10 },
+          { subject: 'Empathy', A: metricsData?.scores?.empathy || 0, fullMark: 10 },
         ],
         resolutionStatus: [
-          { name: 'Resolved', value: statsData?.completed || 120 },
-          { name: 'Pending', value: statsData?.ongoing || 15 },
-          { name: 'Escalated', value: 10 },
-          { name: 'Unresolved', value: 5 },
-        ],
+          { name: 'Resolved', value: metricsData?.resolvedCalls || statsData?.completed || 0 },
+          { name: 'Pending', value: statsData?.ongoing || 0 },
+          { name: 'Escalated', value: 0 }, // Backend doesn't provide this yet
+          { name: 'Unresolved', value: metricsData?.totalCalls 
+            ? (metricsData.totalCalls - (metricsData.resolvedCalls || 0)) 
+            : (statsData?.failed || 0) },
+        ].filter(item => item.value > 0),
         callDurationDistribution: [
           { range: '0-2m', count: calls.filter((c: { duration: number }) => (c.duration || 0) < 120).length },
           { range: '2-5m', count: calls.filter((c: { duration: number }) => (c.duration || 0) >= 120 && (c.duration || 0) < 300).length },
           { range: '5-10m', count: calls.filter((c: { duration: number }) => (c.duration || 0) >= 300 && (c.duration || 0) < 600).length },
           { range: '10+m', count: calls.filter((c: { duration: number }) => (c.duration || 0) >= 600).length },
         ],
-        satisfactionTrend: callsOverTime.map((d, i) => ({
-          date: d.date,
-          score: 7.5 + Math.random() * 1.5,
-          movingAverage: 7.8 + (i * 0.1)
-        })),
+        satisfactionTrend: callsOverTime.map((d, index) => {
+          // Use avgScore from metrics as baseline with some variation
+          const baseScore = metricsData?.avgScore || 7;
+          const variation = (Math.sin(index) * 0.5); // Small variation for visual interest
+          const score = Math.max(0, Math.min(10, baseScore + variation));
+          return {
+            date: d.date,
+            score: parseFloat(score.toFixed(1)),
+            movingAverage: parseFloat(baseScore.toFixed(1))
+          };
+        }),
       };
 
       setAnalyticsData(data);
-    } catch (err) {
-      console.error('Error fetching analytics:', err);
-      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [router]);
 
   useEffect(() => {
     fetchAnalytics();
-  }, [activeRange]);
+  }, [fetchAnalytics, activeRange]);
 
   if (loading) {
     return (
@@ -259,8 +279,8 @@ const AnalyticsDashboard = () => {
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <MetricCard title="Total Calls" value={analyticsData.overview.totalCalls.value} trend={analyticsData.overview.totalCalls.trend} icon={Phone} />
             <MetricCard title="Avg Duration" value={analyticsData.overview.avgDuration.value} trend={analyticsData.overview.avgDuration.trend} icon={Clock} />
-            <MetricCard title="FCR Rate" value={analyticsData.overview.fcrRate.value} trend={analyticsData.overview.fcrRate.trend} icon={CheckCircle} />
-            <MetricCard title="Satisfaction" value={analyticsData.overview.satisfaction.value} trend={analyticsData.overview.satisfaction.trend} icon={Star} />
+            <MetricCard title="FCR Rate" value={analyticsData.overview.fcrRate.display} trend={analyticsData.overview.fcrRate.trend} icon={CheckCircle} />
+            <MetricCard title="Satisfaction" value={analyticsData.overview.satisfaction.display} trend={analyticsData.overview.satisfaction.trend} icon={Star} />
           </div>
         </div>
 

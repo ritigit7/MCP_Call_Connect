@@ -113,20 +113,85 @@ exports.getAgentMetrics = async (req, res) => {
             },
             {
                 $match: {
-                    'callData.agent': require('mongoose').Types.ObjectId(agentId)
+                    'callData.agent': new (require('mongoose').Types.ObjectId)(agentId)
                 }
             },
             {
-                $group: {
-                    _id: null,
-                    totalCalls: { $sum: 1 },
-                    avgScore: { $avg: '$agentPerformance.scores.overall' },
-                    avgEmpathy: { $avg: '$agentPerformance.scores.empathy' },
-                    avgCommunication: { $avg: '$agentPerformance.scores.communication' },
-                    resolvedCalls: {
-                        $sum: {
-                            $cond: [{ $eq: ['$issues.status', 'resolved'] }, 1, 0]
+                $facet: {
+                    overallMetrics: [
+                        {
+                            $group: {
+                                _id: null,
+                                totalCalls: { $sum: 1 },
+                                avgScore: { $avg: '$agentPerformance.scores.overall' },
+                                resolvedCalls: {
+                                    $sum: {
+                                        $cond: [{ $eq: ['$issues.status', 'resolved'] }, 1, 0]
+                                    }
+                                }
+                            }
                         }
+                    ],
+                    sentimentBreakdown: [
+                        {
+                            $group: {
+                                _id: '$sentiment.overall',
+                                count: { $sum: 1 }
+                            }
+                        }
+                    ],
+                    commonTopics: [
+                        {
+                            $group: {
+                                _id: '$topics.main',
+                                count: { $sum: 1 }
+                            }
+                        },
+                        { $sort: { count: -1 } },
+                        { $limit: 5 }
+                    ],
+                    scores: [
+                        {
+                            $group: {
+                                _id: null,
+                                communication: { $avg: '$agentPerformance.scores.communication' },
+                                problemSolving: { $avg: '$agentPerformance.scores.problemSolving' },
+                                productKnowledge: { $avg: '$agentPerformance.scores.productKnowledge' },
+                                empathy: { $avg: '$agentPerformance.scores.empathy' },
+                                professionalism: { $avg: '$agentPerformance.scores.professionalism' }
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                $project: {
+                    totalCalls: { $arrayElemAt: ['$overallMetrics.totalCalls', 0] },
+                    avgScore: { $arrayElemAt: ['$overallMetrics.avgScore', 0] },
+                    resolvedCalls: { $arrayElemAt: ['$overallMetrics.resolvedCalls', 0] },
+                    sentimentBreakdown: {
+                        $arrayToObject: {
+                            $map: {
+                                input: '$sentimentBreakdown',
+                                as: 'item',
+                                in: ['$$item._id', '$$item.count']
+                            }
+                        }
+                    },
+                    commonTopics: {
+                        $map: {
+                            input: '$commonTopics',
+                            as: 'topic',
+                            in: { topic: '$$topic._id', count: '$$topic.count' }
+                        }
+                    },
+                    scores: { $arrayElemAt: ['$scores', 0] },
+                    fcrRate: {
+                        $cond: [
+                            { $gt: [{ $arrayElemAt: ['$overallMetrics.totalCalls', 0] }, 0] },
+                            { $divide: [{ $arrayElemAt: ['$overallMetrics.resolvedCalls', 0] }, { $arrayElemAt: ['$overallMetrics.totalCalls', 0] }] },
+                            0
+                        ]
                     }
                 }
             }
@@ -138,4 +203,4 @@ exports.getAgentMetrics = async (req, res) => {
         console.error('Error fetching agent metrics:', error.message);
         res.status(500).json({ error: error.message });
     }
-};
+};  
