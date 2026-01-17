@@ -105,7 +105,12 @@ exports.getProfile = async (req, res) => {
 exports.getAllAgents = async (req, res) => {
   try {
     console.log('Fetching all agents...');
-    const agents = await Agent.find().select('-password');
+    // Only return active agents that are not deleted
+    const agents = await Agent.find({ 
+      isActive: true, 
+      deletedAt: null 
+    }).select('-password');
+    console.log(`Found ${agents.length} active agents`);
     res.json({ agents });
     console.log('All agents fetched successfully.');
   } catch (error) {
