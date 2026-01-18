@@ -183,6 +183,13 @@ export default function AgentLayout({
         console.log('Socket connected, agent-id from localStorage:', agentId);
         console.log('Socket ID:', socket.id);
 
+        // Handle browser/tab close - notify server agent is leaving
+        const handleBeforeUnload = () => {
+            if (agentId) {
+                socket.emit('agent:leave', { agentId });
+            }
+        };
+
         if (agentId) {
             console.log('Agent joining socket room with ID:', agentId);
             socket.emit('agent:join', { agentId });
@@ -191,6 +198,8 @@ export default function AgentLayout({
             socket.once('agent:joined', (data) => {
                 console.log('Agent joined confirmation:', data);
             });
+
+            window.addEventListener('beforeunload', handleBeforeUnload);
         } else {
             console.warn('No agent-id found in localStorage! Agent will not receive calls.');
         }
@@ -229,6 +238,7 @@ export default function AgentLayout({
         socket.on('webrtc:ice-candidate', onICECandidate);
 
         return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
             socket.off('call:incoming', onIncomingCall);
             socket.off('call:ended', onCallEnded);
             socket.off('webrtc:offer', onWebRTCOffer);
@@ -265,8 +275,16 @@ export default function AgentLayout({
     ];
 
     const handleLogout = () => {
+        // Notify server that agent is going offline before logout
+        if (socket && isConnected) {
+            const agentId = localStorage.getItem('agent-id');
+            if (agentId) {
+                socket.emit('agent:leave', { agentId });
+            }
+        }
         localStorage.removeItem("agent");
         localStorage.removeItem("agentToken");
+        localStorage.removeItem("agent-id");
         router.push("/agent/login");
     };
 

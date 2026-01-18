@@ -29,6 +29,22 @@ class SignalingService {
         }
       });
 
+      // Agent leaves (explicit logout)
+      socket.on('agent:leave', async (data) => {
+        try {
+          const { agentId } = data;
+          await Agent.findByIdAndUpdate(agentId, {
+            socketId: null,
+            status: 'offline'
+          });
+          socket.agentId = null;
+          console.log(`🔴 Agent ${agentId} logged out`);
+          socket.emit('agent:left', { success: true });
+        } catch (error) {
+          socket.emit('error', { message: error.message });
+        }
+      });
+
       // Customer joins
       socket.on('customer:join', async (data) => {
         try {

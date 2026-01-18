@@ -3,8 +3,8 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
-// TODO: Move this to an environment variable
-const SERVER_URL = "https://hsbd23p5-3000.inc1.devtunnels.ms";
+// Use separate environment variable for socket URL (without /api path)
+const SERVER_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3000";
 
 interface SocketContextType {
     socket: Socket | null;
